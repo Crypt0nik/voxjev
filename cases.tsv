@@ -1,0 +1,110 @@
+# phrase	id attendu (ou none)	mode (optionnel, défaut : defaut)
+# --- open_app
+lance Discord	open_app
+tu peux m'ouvrir Obsidian	open_app
+j'ai ouvert Obsidian ce matin et il a planté	none
+# --- quit_app
+quitte Discord	quit_app
+ferme complètement Spotify	quit_app
+Spotify a quitté tout seul hier soir	none
+# --- web_search
+cherche la recette du gratin dauphinois	web_search
+ouvre Safari et cherche les horaires de la piscine	web_search
+j'ai cherché partout mes clés ce matin	none
+# --- youtube_search
+mets de la musique jazz sur YouTube	youtube_search
+cherche une vidéo sur la cuisson du riz sur YouTube	youtube_search
+j'ai vu une vidéo marrante sur YouTube hier	none
+# --- open_website
+va sur LinkedIn	open_website
+ouvre Netflix	open_website
+mon abonnement Netflix a encore augmenté	none
+# --- volume_up
+monte un peu le volume	volume_up
+mets le son plus fort	volume_up
+le volume de la réunion était trop fort	none
+# --- volume_down
+baisse un peu le volume	volume_down
+c'est trop fort baisse	volume_down
+les voisins ont baissé leur musique enfin	none
+# --- toggle_mute
+mets l'ordi en sourdine	toggle_mute
+coupe le son de l'ordinateur	toggle_mute
+il a coupé le son de son micro pendant l'appel	none
+# --- play_pause
+mets en pause	play_pause
+reprends la lecture de la musique	play_pause
+on fait une pause café dans dix minutes	none
+# --- next_track
+morceau suivant	next_track
+zappe cette chanson	next_track
+la chanson suivante de l'album est ma préférée	none
+# --- screenshot
+prends une capture d'écran	screenshot
+fais un screenshot de l'écran	screenshot
+envoie-moi la capture d'écran que tu as faite hier	none
+# --- lock_screen
+verrouille la session	lock_screen
+bloque l'écran je m'en vais	lock_screen
+j'ai oublié de verrouiller mon vélo	none
+# --- sleep_display
+mets l'écran en veille	sleep_display
+éteins l'écran s'il te plaît	sleep_display
+mon écran s'est éteint tout seul pendant le film	none
+# --- empty_trash
+vide la corbeille	empty_trash
+supprime définitivement ce qu'il y a dans la corbeille	empty_trash
+n'oublie pas de sortir la poubelle ce soir	none
+# --- close_window
+ferme cette fenêtre	close_window
+ferme l'onglet actuel	close_window
+ferme la fenêtre il fait froid	none
+# --- new_tab
+ouvre un nouvel onglet	new_tab
+nouvel onglet s'il te plaît	new_tab
+j'ai trop d'onglets ouverts en ce moment	none
+# --- switch_mode
+passe en mode travail	switch_mode
+active le mode CTF	switch_mode
+je suis pas du tout en mode travail aujourd'hui	none
+# --- exploitdb_search (ctf)
+trouve un exploit pour Apache Tomcat	exploitdb_search	ctf
+exploit db ProFTPD 1.3.5	exploitdb_search	ctf
+l'exploit de l'équipe adverse était impressionnant	none	ctf
+# --- cve_search (ctf)
+cherche la CVE 2014 0160	cve_search	ctf
+quelles sont les CVE de Jenkins	cve_search	ctf
+on a patché la CVE hier avec l'équipe	none	ctf
+# --- gtfobins_lookup (ctf)
+gtfobins pour python	gtfobins_lookup	ctf
+ouvre GTFOBins pour find	gtfobins_lookup	ctf
+GTFOBins m'a bien aidé sur la dernière box	none	ctf
+# --- open_revshells (ctf)
+ouvre le générateur de reverse shell	open_revshells	ctf
+il me faut un reverse shell en bash	open_revshells	ctf
+mon reverse shell est mort au bout de deux minutes	none	ctf
+# --- open_cyberchef (ctf)
+ouvre CyberChef	open_cyberchef	ctf
+j'ai besoin de décoder ce hexadécimal	open_cyberchef	ctf
+CyberChef c'est vraiment un outil génial	none	ctf
+# --- new_terminal_tab (ctf)
+ouvre un nouveau terminal	new_terminal_tab	ctf
+donne-moi un autre terminal	new_terminal_tab	ctf
+le terminal plante quand je lance nmap	none	ctf
+# --- new_email (travail)
+écris un nouveau mail	new_email	travail
+je veux rédiger un e-mail	new_email	travail
+j'ai reçu un mail bizarre de mon manager	none	travail
+# --- github_search (travail)
+cherche pydantic sur GitHub	github_search	travail
+trouve un repo de scraping sur GitHub	github_search	travail
+j'ai poussé mon code sur GitHub hier	none	travail
+# --- new_note (travail)
+crée une nouvelle note	new_note	travail
+note ça dans une nouvelle note	new_note	travail
+il a eu une bonne note à son examen	none	travail
+# --- hors sujet / conversation / bruit
+tu viens manger avec nous	none
+c'est quoi la capitale du Pérou	none
+euh attends je réfléchis	none
+Marc ouvre la porte s'il te plaît	none

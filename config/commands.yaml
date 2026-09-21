@@ -1,0 +1,356 @@
+# Configuration de voxjev : réglages, modes et commandes.
+#
+# Tout ce que le lanceur peut exécuter est déclaré ici. Jev ne fait que CHOISIR une
+# commande parmi cette liste ; les arguments sont extraits par du code déterministe
+# (regex + fuzzy matching) et injectés uniquement dans les champs autorisés.
+#
+# Types d'action (liste blanche) :
+#   open_app   {app}                       -> open -a <app>
+#   quit_app   {app}                       -> osascript (argv) : quit l'app
+#   open_url   {url, app?}                 -> open [-a <app>] <url>   (args texte encodés en URL)
+#   applescript{script, args?}             -> osascript -e <script figé> <args en argv>
+#   keystroke  {key, modifiers?, app?}     -> System Events keystroke (touche figée)
+#   shortcut   {name}                      -> shortcuts run <name figé>
+#   exec       {argv}                      -> argv figé, argv[0] doit être dans settings.exec_allowlist
+#   set_mode   {mode}                      -> change le mode actif (+ on_enter du mode)
+#   sequence   {steps: [...]}              -> plusieurs actions à la suite
+#
+# Placeholders `{nom}` : uniquement des arguments déclarés dans `args` de la commande.
+#   - type app  : nom résolu par fuzzy matching sur les apps installées (+ alias)
+#   - type text : texte libre du transcript, TOUJOURS encodé (URL) ou passé en argv
+#   - type enum : valeur tirée de la config (jamais du transcript)
+
+settings:
+  model: jev-latest
+  threshold: 0.70            # p(commande) minimale pour exécuter sans confirmation
+  confirm_floor: 0.40        # en dessous : ignoré ; entre floor et threshold : confirmation
+  addressed_threshold: 0.70  # Noul « m'est-il adressé » : au-dessus, règles normales
+  addressed_floor: 0.35      # en dessous : ignoré ; entre floor et threshold : confirmation
+  destructive_threshold: 0.50  # Noul « destructif » au-dessus duquel on confirme
+  hotkey: alt_r              # touche push-to-talk (noms pynput : alt_r, cmd_r, ctrl_r, f13...)
+  stt_model: mlx-community/whisper-large-v3-turbo
+  language: fr
+  # Vocabulaire soufflé à Whisper (noms propres / jargon qu'il écorcherait sinon).
+  stt_prompt: "Commandes vocales : ouvre Chrome, Burp, Ghostty, Notion, Spotify, CyberChef, GTFOBins, revshells, Exploit-DB, CVE, mode CTF."
+  min_record_seconds: 0.3
+  confirm_timeout_seconds: 10
+  sounds:
+    success: /System/Library/Sounds/Glass.aiff
+    failure: /System/Library/Sounds/Basso.aiff
+    listening: /System/Library/Sounds/Tink.aiff
+    ignored: /System/Library/Sounds/Pop.aiff
+  app_dirs:
+    - /Applications
+    - /Applications/Utilities
+    - /System/Applications
+    - /System/Applications/Utilities
+    - ~/Applications
+  exec_allowlist: [pmset]
+  # Formules de politesse retirées avant l'extraction des arguments.
+  strip_phrases: ["s'il te plaît", "s'il te plait", "s'il vous plaît", "stp", "merci", "please"]
+  # Noms parlés -> nom exact de l'app (uniquement si l'app est installée).
+  app_aliases:
+    chrome: Google Chrome
+    google chrome: Google Chrome
+    brave: Brave Browser
+    burp: Burp Suite Community Edition
+    burp suite: Burp Suite Community Edition
+    vs code: Visual Studio Code
+    vscode: Visual Studio Code
+    visual studio: Visual Studio Code
+    code: Visual Studio Code
+    terminal: Terminal
+    ghostty: Ghostty
+    réglages: System Settings
+    paramètres: System Settings
+    préférences système: System Settings
+    calendrier: Calendar
+    calculatrice: Calculator
+    musique: Music
+    plans: Maps
+    rappels: Reminders
+    aperçu: Preview
+    moniteur d'activité: Activity Monitor
+    utilitaire de disque: Disk Utility
+    app store: App Store
+    whatsapp: WhatsApp
+    teams: Microsoft Teams
+    excel: Microsoft Excel
+    mail: Mail
+    courrier: Mail
+    notes: Notes
+    finder: Finder
+  # Pour la question Choice, l'option « aucune / hors sujet ».
+  none_option:
+    what: "Aucune commande : conversation, question générale, réflexion à voix haute, bruit, ou demande qu'aucune commande de la liste ne couvre"
+    examples:
+      - "je pense qu'on devrait manger vers midi"
+      - "tu as vu le match hier soir"
+      - "c'est quoi déjà la capitale de l'Australie"
+      - "euh attends deux secondes"
+
+modes:
+  defaut:
+    description: "Mode par défaut"
+    aliases: [défaut, normal, standard, défaut normal]
+    commands: []            # uniquement les commandes communes
+  ctf:
+    description: "Mode CTF / pentest"
+    aliases: [ctf, capture the flag, pentest, hacking, sécu]
+    on_enter:
+      - {type: open_app, app: Ghostty, fallbacks: [Terminal]}
+      - {type: open_app, app: Burp Suite Community Edition}
+      - {type: open_app, app: Google Chrome, fallbacks: [Safari]}
+    commands: [exploitdb_search, cve_search, gtfobins_lookup, open_revshells, open_cyberchef, new_terminal_tab]
+  travail:
+    description: "Mode travail"
+    aliases: [travail, boulot, bureau, taf, work]
+    on_enter:
+      - {type: open_app, app: Mail}
+      - {type: open_app, app: Calendar}
+      - {type: open_app, app: Notion}
+    commands: [new_email, github_search, new_note]
+
+# Commandes disponibles dans tous les modes.
+common: [open_app, quit_app, web_search, youtube_search, open_website, volume_up, volume_down,
+         toggle_mute, play_pause, next_track, screenshot, lock_screen, sleep_display,
+         empty_trash, close_window, new_tab, switch_mode]
+
+commands:
+  # ---------------------------------------------------------------- apps
+  - id: open_app
+    description: "Ouvrir, lancer ou afficher une application installée (sans autre action)"
+    examples: ["ouvre Spotify", "lance Visual Studio Code", "démarre le terminal"]
+    destructive: false
+    args:
+      app:
+        type: app
+        patterns:
+          - "(?:ouvr\\w*|lanc\\w*|démarr\\w*|affich\\w*|va sur|passe sur|bascule sur)\\s+(?:-?moi\\s+)?(?:l'application\\s+|l'appli\\s+|l'app\\s+|le\\s+|la\\s+|les\\s+|l')?(?P<app>.+)"
+    action: {type: open_app, app: "{app}"}
+
+  - id: quit_app
+    description: "Quitter ou fermer complètement une application"
+    examples: ["quitte Spotify", "ferme complètement Chrome", "ferme l'application Notion"]
+    destructive: true
+    args:
+      app:
+        type: app
+        patterns:
+          - "(?:quitt\\w*|ferm\\w*|tu\\w*|arrêt\\w*)\\s+(?:complètement\\s+)?(?:l'application\\s+|l'app\\s+|le\\s+|la\\s+|l')?(?P<app>.+)"
+    action: {type: quit_app, app: "{app}"}
+
+  # ---------------------------------------------------------------- web
+  - id: web_search
+    description: "Faire une recherche sur le web (Google), éventuellement dans un navigateur précis"
+    examples: ["cherche la météo à Lyon", "ouvre Chrome et cherche des recettes de crêpes", "recherche sur Google le prix du bitcoin"]
+    destructive: false
+    args:
+      query:
+        type: text
+        patterns:
+          - "(?:re)?cherch\\w*\\s+(?:-?moi\\s+)?(?:sur (?:google|internet|le web)\\s+)?(?P<query>.+?)(?:\\s+(?:dans|sur|avec)\\s+(?:google chrome|chrome|safari|arc|brave|firefox|google|internet))?$"
+          - "google\\s+(?P<query>.+)$"
+      browser:
+        type: app
+        optional: true
+        choices: [Google Chrome, Safari, Arc, Brave Browser]
+        patterns:
+          - "(?:ouvr\\w*|lanc\\w*|dans|sur|avec)\\s+(?P<browser>google chrome|chrome|safari|arc|brave)\\b"
+    action: {type: open_url, url: "https://www.google.com/search?q={query}", app: "{browser}"}
+
+  - id: youtube_search
+    description: "Chercher ou lancer une vidéo sur YouTube"
+    examples: ["mets du lofi sur YouTube", "cherche un tuto Python sur YouTube", "YouTube vidéos de chats"]
+    destructive: false
+    args:
+      query:
+        type: text
+        patterns:
+          - "(?:mets|lance|cherche|recherche|trouve)\\w*\\s+(?:-?moi\\s+)?(?P<query>.+?)\\s+sur\\s+youtube"
+          - "(?:sur\\s+)?youtube\\s*,?\\s+(?:cherche\\s+|mets\\s+)?(?P<query>.+)$"
+    action: {type: open_url, url: "https://www.youtube.com/results?search_query={query}"}
+
+  - id: open_website
+    description: "Ouvrir un site web connu (YouTube, GitHub, Gmail, ChatGPT, LinkedIn, Netflix)"
+    examples: ["ouvre GitHub", "va sur Gmail", "affiche mes mails Gmail"]
+    destructive: false
+    args:
+      site:
+        type: enum
+        values:
+          youtube: {aliases: [youtube], value: "https://www.youtube.com"}
+          github: {aliases: [github, git hub], value: "https://github.com"}
+          gmail: {aliases: [gmail, mails gmail], value: "https://mail.google.com"}
+          chatgpt: {aliases: [chatgpt, chat gpt], value: "https://chatgpt.com"}
+          linkedin: {aliases: [linkedin, linked in], value: "https://www.linkedin.com"}
+          netflix: {aliases: [netflix], value: "https://www.netflix.com"}
+    action: {type: open_url, url: "{site}"}
+
+  # ---------------------------------------------------------------- son / musique
+  - id: volume_up
+    description: "Monter le volume sonore de l'ordinateur"
+    examples: ["monte le son", "plus fort", "augmente le volume"]
+    destructive: false
+    action: {type: applescript, script: "set volume output volume ((output volume of (get volume settings)) + 12)"}
+
+  - id: volume_down
+    description: "Baisser le volume sonore de l'ordinateur"
+    examples: ["baisse le son", "moins fort", "diminue le volume"]
+    destructive: false
+    action: {type: applescript, script: "set volume output volume ((output volume of (get volume settings)) - 12)"}
+
+  - id: toggle_mute
+    description: "Couper ou remettre le son de l'ordinateur (muet)"
+    examples: ["coupe le son", "mode muet", "remets le son"]
+    destructive: false
+    action: {type: applescript, script: "set volume output muted (not (output muted of (get volume settings)))"}
+
+  - id: play_pause
+    description: "Mettre en pause ou reprendre la musique (Spotify)"
+    examples: ["pause", "mets la musique en pause", "relance la musique"]
+    destructive: false
+    action: {type: applescript, script: "tell application \"Spotify\" to playpause"}
+
+  - id: next_track
+    description: "Passer au morceau de musique suivant (Spotify)"
+    examples: ["chanson suivante", "passe au morceau suivant", "next"]
+    destructive: false
+    action: {type: applescript, script: "tell application \"Spotify\" to next track"}
+
+  # ---------------------------------------------------------------- système
+  - id: screenshot
+    description: "Faire une capture d'écran d'une zone de l'écran"
+    examples: ["fais une capture d'écran", "screenshot", "capture l'écran"]
+    destructive: false
+    action: {type: keystroke, key: "4", modifiers: [command, shift]}
+
+  - id: lock_screen
+    description: "Verrouiller l'écran de l'ordinateur"
+    examples: ["verrouille l'écran", "verrouille l'ordi", "lock"]
+    destructive: false
+    action: {type: keystroke, key: "q", modifiers: [control, command]}
+
+  - id: sleep_display
+    description: "Éteindre l'écran / mettre l'écran en veille"
+    examples: ["éteins l'écran", "mets l'écran en veille", "coupe l'écran"]
+    destructive: false
+    action: {type: exec, argv: [pmset, displaysleepnow]}
+
+  - id: empty_trash
+    description: "Vider la corbeille (suppression définitive des fichiers)"
+    examples: ["vide la corbeille", "vide la poubelle", "supprime tout ce qu'il y a dans la corbeille"]
+    destructive: true
+    action: {type: applescript, script: "tell application \"Finder\" to empty trash"}
+
+  - id: close_window
+    description: "Fermer la fenêtre ou l'onglet actuellement au premier plan"
+    examples: ["ferme cette fenêtre", "ferme l'onglet", "ferme ça"]
+    destructive: false
+    action: {type: keystroke, key: "w", modifiers: [command]}
+
+  - id: new_tab
+    description: "Ouvrir un nouvel onglet dans l'application au premier plan"
+    examples: ["nouvel onglet", "ouvre un nouvel onglet", "crée un onglet"]
+    destructive: false
+    action: {type: keystroke, key: "t", modifiers: [command]}
+
+  - id: switch_mode
+    description: "Changer le mode de l'assistant (défaut, CTF, travail)"
+    examples: ["passe en mode CTF", "mode travail", "reviens au mode normal"]
+    destructive: false
+    args:
+      mode:
+        type: mode
+        patterns:
+          - "mode\\s+(?P<mode>.+)$"
+          - "(?:passe|bascule|active)\\w*\\s+(?:en|au|le)\\s+(?P<mode>.+)$"
+    action: {type: set_mode, mode: "{mode}"}
+
+  # ---------------------------------------------------------------- mode CTF
+  - id: exploitdb_search
+    description: "Chercher un exploit sur Exploit-DB"
+    examples: ["cherche un exploit pour vsftpd", "exploit db apache struts", "trouve un exploit pour wordpress 5.0"]
+    destructive: false
+    args:
+      query:
+        type: text
+        patterns:
+          - "exploits?\\s*(?:-?\\s*db)?\\s+(?:pour|sur|de)?\\s*(?P<query>.+)$"
+    action: {type: open_url, url: "https://www.exploit-db.com/search?q={query}"}
+
+  - id: cve_search
+    description: "Chercher une vulnérabilité CVE par identifiant ou par produit"
+    examples: ["cherche la CVE 2021 44228", "cve log4j", "vulnérabilités connues de openssl"]
+    destructive: false
+    args:
+      query:
+        type: text
+        patterns:
+          - "(?P<query>cve[\\s-]*\\d{4}[\\s-]+\\d{3,7})"
+          - "(?:cve|vulnérabilités?(?:\\s+connues)?)\\s+(?:de\\s+|pour\\s+|sur\\s+)?(?P<query>.+)$"
+        rewrite:
+          - ["cve[\\s-]*(\\d{4})[\\s-]+(\\d{3,7})", "CVE-\\1-\\2"]
+    action: {type: open_url, url: "https://www.cve.org/CVERecord/SearchResults?query={query}"}
+
+  - id: gtfobins_lookup
+    description: "Ouvrir la page GTFOBins d'un binaire Unix (élévation de privilèges)"
+    examples: ["gtfobins find", "ouvre gtfo bins pour vim", "comment escalader avec tar sur gtfobins"]
+    destructive: false
+    args:
+      binary:
+        type: text
+        path_segment: true
+        patterns:
+          - "gtfo\\s*bins?\\s+(?:pour\\s+|de\\s+)?(?P<binary>[\\w.+-]+)"
+          - "(?:avec|pour)\\s+(?P<binary>[\\w.+-]+)\\s+sur\\s+gtfo\\s*bins?"
+    action: {type: open_url, url: "https://gtfobins.github.io/gtfobins/{binary}/"}
+
+  - id: open_revshells
+    description: "Ouvrir le générateur de reverse shell (revshells.com)"
+    examples: ["ouvre revshells", "il me faut un reverse shell", "générateur de reverse shell"]
+    destructive: false
+    action: {type: open_url, url: "https://www.revshells.com/"}
+
+  - id: open_cyberchef
+    description: "Ouvrir CyberChef pour décoder ou transformer des données"
+    examples: ["ouvre cyberchef", "il faut que je décode du base64", "lance cyber chef"]
+    destructive: false
+    action: {type: open_url, url: "https://gchq.github.io/CyberChef/"}
+
+  - id: new_terminal_tab
+    description: "Ouvrir un nouvel onglet ou une nouvelle fenêtre de terminal"
+    examples: ["nouveau terminal", "ouvre un nouvel onglet de terminal", "un autre shell"]
+    destructive: false
+    action:
+      type: sequence
+      steps:
+        - {type: keystroke, key: "t", modifiers: [command], app: Ghostty, fallbacks: [Terminal]}
+
+  # ---------------------------------------------------------------- mode travail
+  - id: new_email
+    description: "Écrire un nouvel e-mail"
+    examples: ["nouveau mail", "écris un e-mail", "rédige un nouveau message électronique"]
+    destructive: false
+    action: {type: open_url, url: "mailto:"}
+
+  - id: github_search
+    description: "Chercher un dépôt ou du code sur GitHub"
+    examples: ["cherche fastapi sur GitHub", "github recherche whisper mlx", "trouve un repo de parseur yaml sur GitHub"]
+    destructive: false
+    args:
+      query:
+        type: text
+        patterns:
+          - "(?:cherch\\w*|trouv\\w*|recherch\\w*)\\s+(?:un\\s+(?:repo|dépôt)\\s+(?:de\\s+)?)?(?P<query>.+?)\\s+sur\\s+git\\s*hub"
+          - "git\\s*hub\\s+(?:cherche\\s+|recherche\\s+)?(?P<query>.+)$"
+    action: {type: open_url, url: "https://github.com/search?q={query}&type=repositories"}
+
+  - id: new_note
+    description: "Créer une nouvelle note dans Notes"
+    examples: ["nouvelle note", "prends une note", "crée une note"]
+    destructive: false
+    action:
+      type: sequence
+      steps:
+        - {type: keystroke, key: "n", modifiers: [command], app: Notes}

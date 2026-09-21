@@ -1,0 +1,39 @@
+[project]
+name = "voxjev"
+version = "0.1.0"
+description = "Add your description here"
+authors = [
+    { name = "Arthur", email = "arthurobraqueto@gmail.com" }
+]
+requires-python = ">=3.12"
+dependencies = [
+    "mlx-whisper>=0.4.3",
+    "numpy>=2.5.3",
+    "pynput>=1.8.2",
+    "pyobjc-framework-cocoa>=12.2.2",
+    "python-dotenv>=1.2.3",
+    "pyyaml>=6.0.3",
+    "rapidfuzz>=3.14.6",
+    "sounddevice>=0.5.6",
+    "typesafe-sdk>=0.7.0",
+]
+
+[project.scripts]
+voxjev = "voxjev:main"
+
+[build-system]
+requires = ["uv_build>=0.10.9,<0.11.0"]
+build-backend = "uv_build"
+
+[dependency-groups]
+dev = [
+    "pytest>=9.1.1",
+]
+
+[tool.uv]
+link-mode = "copy"
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+addopts = "-p no:cacheprovider"
+testpaths = ["tests"]

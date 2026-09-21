@@ -1,0 +1,11 @@
+#!/usr/bin/env bash
+# Lanceur : n'utilise pas le .pth de l'install éditable (macOS/iCloud peut marquer
+# .venv comme « hidden », et Python ignore alors les .pth cachés).
+DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+export PYTHONPATH="$DIR/src${PYTHONPATH:+:$PYTHONPATH}"
+# Caches .pyc hors du dossier du projet : iCloud (~/Documents) verrouille les fichiers
+# qu'il synchronise, ce qui peut bloquer l'import de plusieurs dizaines de secondes.
+export PYTHONPYCACHEPREFIX="${PYTHONPYCACHEPREFIX:-$HOME/Library/Caches/voxjev/pycache}"
+# --no-sync : pas de réinstallation du paquet à chaque modification des sources (inutile
+# grâce au PYTHONPATH). Lancez `uv sync` après un changement de dépendances.
+exec uv run --project "$DIR" --quiet --no-sync python -m voxjev "$@"
