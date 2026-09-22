@@ -119,6 +119,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     p.add_argument("--config", default=str(DEFAULT_CONFIG), help="fichier YAML de config")
     p.add_argument("--fake", action="store_true", help="utiliser le faux client Jev (hors ligne)")
     p.add_argument("--yes", action="store_true", help="confirmer automatiquement (mode --text)")
+    p.add_argument("--spotify-login", action="store_true", help="connecter voxjev à votre compte Spotify (une fois)")
     p.add_argument("--no-sound", action="store_true", help="désactiver les sons")
     p.add_argument("--workers", type=int, default=6, help="appels Jev parallèles pour --eval")
     return p.parse_args(argv)
@@ -137,6 +138,11 @@ def main(argv: list[str] | None = None) -> int:
     if args.mode and args.mode not in config.modes:
         print(f"Mode inconnu {args.mode!r} (disponibles : {', '.join(config.modes)})", file=sys.stderr)
         return 2
+
+    if args.spotify_login:
+        from .spotify import login_cli
+
+        return login_cli()
 
     if args.eval:
         from .evaluate import run_eval

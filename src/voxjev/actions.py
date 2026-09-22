@@ -35,6 +35,9 @@ class Step:
             return f"[mode -> {self.mode}]"
         if self.kind == "note":
             return f"[{self.label}]"
+        if self.kind == "spotify":
+            op, query = self.argv
+            return f"[spotify {op}" + (f" {query!r}]" if query else "]")
         return " ".join(_shell_repr(a) for a in self.argv)
 
 
@@ -120,6 +123,14 @@ def plan_action(action: dict, command: Command | None, values: dict[str, str], c
             app = _resolve_app(app, action.get("fallbacks", []), installed)
         return [Step("run", _keystroke_argv(action["key"], list(action.get("modifiers", [])), app),
                      label="raccourci clavier")]
+
+    if kind == "spotify":
+        query = _render(action.get("query", ""), values)
+        if action["op"] in ("play", "search") and not query:
+            raise ActionError("rien à chercher sur Spotify")
+        label = {"play": f"Spotify : lancer « {query} »", "like": "Spotify : liker le morceau en cours",
+                 "search": f"Spotify : chercher « {query} »"}[action["op"]]
+        return [Step("spotify", (action["op"], query), label=label)]
 
     if kind == "shortcut":
         return [Step("run", ("shortcuts", "run", action["name"]), label=f"raccourci {action['name']}")]

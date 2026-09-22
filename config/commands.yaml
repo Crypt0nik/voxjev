@@ -122,7 +122,7 @@ modes:
 # Commandes disponibles dans tous les modes.
 common: [open_app, quit_app, web_search, youtube_search, open_website, volume_up, volume_down,
          toggle_mute, play_pause, next_track, screenshot, lock_screen, sleep_display,
-         empty_trash, close_window, new_tab, switch_mode]
+         empty_trash, close_window, new_tab, switch_mode, spotify_play, spotify_like, spotify_search]
 
 commands:
   # ---------------------------------------------------------------- apps
@@ -235,6 +235,38 @@ commands:
     examples: ["chanson suivante", "passe au morceau suivant", "next"]
     destructive: false
     action: {type: applescript, script: "tell application \"Spotify\" to next track"}
+
+  # ---------------------------------------------------------------- Spotify
+  - id: spotify_play
+    label: "Spotify : lancer « {query} »"
+    description: "Lancer la lecture d'un morceau, d'un artiste, d'un album ou d'une playlist précis sur Spotify"
+    examples: ["mets Get Lucky de Daft Punk sur Spotify", "joue du Stromae", "lance la chanson Bohemian Rhapsody"]
+    destructive: false
+    args:
+      query:
+        type: text
+        patterns:
+          - "(?:mets|joue|lance|écoute|passe|fais écouter)\\w*\\s+(?:-?moi\\s+)?(?:la chanson |le morceau |le titre |le son |l'album |la playlist |un peu de |du |de la |de l'|des )?(?P<query>.+?)(?:\\s+(?:sur|dans|avec)\\s+spotify)?$"
+    action: {type: spotify, op: play, query: "{query}"}
+
+  - id: spotify_like
+    label: "Spotify : liker le morceau en cours"
+    description: "Liker sur Spotify (ajouter aux titres likés) le morceau en cours d'écoute, même si son titre est cité ; ne lance aucune lecture"
+    examples: ["like ce morceau", "like le morceau en cours sur Spotify", "ajoute ce son à mes titres likés", "mets un like à la chanson qui passe", "like Hey Jude sur Spotify"]
+    destructive: false
+    action: {type: spotify, op: like}
+
+  - id: spotify_search
+    label: "Spotify : chercher « {query} »"
+    description: "Chercher quelque chose dans l'app Spotify, sans le lancer"
+    examples: ["cherche Daft Punk dans Spotify", "recherche des podcasts de science sur Spotify", "trouve la playlist lofi dans Spotify"]
+    destructive: false
+    args:
+      query:
+        type: text
+        patterns:
+          - "(?:cherch\\w*|recherch\\w*|trouv\\w*)\\s+(?:-?moi\\s+)?(?P<query>.+?)\\s+(?:dans|sur)\\s+spotify"
+    action: {type: spotify, op: search, query: "{query}"}
 
   # ---------------------------------------------------------------- système
   - id: screenshot

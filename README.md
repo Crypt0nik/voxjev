@@ -52,6 +52,7 @@ voxjev vérifie l'accessibilité au démarrage et affiche la marche à suivre si
 | `./voxjev --mode ctf ...` | forcer le mode (`defaut`, `ctf`, `travail`) |
 | `./voxjev --eval [cases.tsv]` | évaluation : précision, faux déclenchements, latence |
 | `./voxjev --fake ...` | faux client Jev, hors ligne |
+| `./voxjev --spotify-login` | connecter Spotify (une fois) |
 | `uv run pytest` | tests unitaires (100 % hors ligne, faux client) |
 
 Exemple de log :
@@ -67,6 +68,52 @@ Exemple de log :
 
 Sons : *Tink* à l'appui, *Glass* = exécuté, *Basso* = échec ou annulé, *Pop* = ignoré (`--no-sound` pour couper).
 Le mode actif et la dernière commande sont conservés dans `~/Library/Application Support/voxjev/state.json`.
+
+## Demandes composées (« ouvre Spotify, cherche Get Lucky puis lance-la et like-la »)
+
+1. **Détection sans appel de plus** : l'appel Jev habituel contient une 4ᵉ question (Noul
+   « plusieurs actions ? »). Au-dessus de `compound_threshold` (0,60), la phrase est découpée.
+2. **Découpage** :
+   - avec `OPENROUTER_API_KEY` dans `.env`, un petit LLM (`split_model`, par défaut
+     `inception/mercury-2.5`) fait le découpage. Il résout aussi les pronoms et le contexte
+     d'app (« lance-la » → « lance Get Lucky sur Spotify ») ;
+   - sans clé, des règles déterministes coupent sur « et / puis / ensuite / , » suivis d'un
+     verbe d'action, avec les mêmes résolutions simples.
+3. **Chaque étape repasse par le pipeline normal.** Jev choisit une commande de la liste
+   blanche et le code extrait les arguments. **Le texte produit par le LLM n'est jamais
+   exécuté** : c'est une nouvelle phrase soumise aux mêmes règles.
+4. **Plan d'abord, action ensuite** : toutes les étapes sont évaluées en parallèle avant
+   d'agir. Une étape qui change de mode entraîne la replanification des suivantes dans le
+   nouveau mode.
+   - Si une étape est invalide, **rien n'est exécuté**.
+   - Si une étape est sensible ou ignorée, **une seule confirmation** couvre tout le plan.
+5. « ouvre Chrome et cherche X » reste **une** commande (recherche dans Chrome) : une commande
+   unique qui couvre déjà toutes les étapes l'emporte.
+
+Coût : environ 0,0001 à 0,0003 $ par découpage LLM, en plus de 1 appel Jev par étape.
+
+## Spotify
+
+| Dites… | Effet |
+|---|---|
+| « mets Get Lucky de Daft Punk sur Spotify », « joue du Stromae » | lance le morceau, l'artiste ou la playlist |
+| « like ce morceau » | ajoute le morceau en cours aux titres likés |
+| « cherche des podcasts de cuisine dans Spotify » | ouvre la recherche dans l'app |
+| « pause », « morceau suivant » | commandes existantes (AppleScript) |
+
+La lecture passe par l'app de bureau (AppleScript). La **recherche exacte** et le **like**
+passent par l'API Web Spotify, avec une connexion unique :
+
+1. Créez une app sur <https://developer.spotify.com/dashboard> (gratuit) :
+   - Redirect URI : `http://127.0.0.1:8888/callback`
+   - API : **Web API**
+2. Ajoutez `SPOTIFY_CLIENT_ID=<Client ID>` au `.env`. C'est le flux PKCE : pas de secret.
+3. Lancez `./voxjev --spotify-login` et acceptez dans le navigateur. Le jeton est stocké dans
+   `~/Library/Application Support/voxjev/spotify_token.json` (permissions 600) et se
+   rafraîchit tout seul.
+
+Sans connexion, « mets X sur Spotify » ouvre la recherche de X dans l'app (sans la lancer), et
+le like explique comment se connecter.
 
 ## Interface graphique (`./voxjev --gui`)
 

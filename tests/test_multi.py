@@ -44,7 +44,10 @@ def runner(config, responses, confirm=None, dry_run=False, mode="defaut"):
 @pytest.mark.parametrize("text,expected", [
     ("ouvre Spotify et monte le son", ["ouvre Spotify", "monte le son"]),
     ("Ouvre la calculatrice, puis verrouille l'écran.", ["Ouvre la calculatrice", "verrouille l'écran"]),
-    ("cherche Daft Punk ensuite lance-la", ["cherche Daft Punk", "lance-la"]),
+    ("cherche Daft Punk ensuite lance-la", ["cherche Daft Punk", "lance Daft Punk"]),
+    ("ouvre Spotify, cherche Get Lucky puis lance-la et like-la",
+     ["ouvre Spotify", "cherche Get Lucky sur Spotify", "lance Get Lucky sur Spotify",
+      "like le morceau en cours sur Spotify"]),
     ("cherche des crêpes et des gaufres", ["cherche des crêpes et des gaufres"]),  # « et » sans verbe
     ("tu as vu le match et le résumé", ["tu as vu le match et le résumé"]),
     ("ouvre notion", ["ouvre notion"]),

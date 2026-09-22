@@ -15,6 +15,14 @@ class SubprocessExecutor:
 
     def run(self, steps: list[Step]) -> None:
         for step in steps:
+            if step.kind == "spotify":
+                from .spotify import SpotifyError, run_op
+
+                try:
+                    print(f"  {run_op(*step.argv)}", flush=True)
+                except (SpotifyError, subprocess.SubprocessError) as exc:
+                    raise ActionError(f"Spotify : {exc}") from exc
+                continue
             if step.kind != "run" or not step.argv:
                 continue
             try:

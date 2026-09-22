@@ -47,7 +47,36 @@ def split_rules(text: str) -> list[str]:
             parts.append(text[start:m.start()].strip(" ,"))
             start = m.end()
     parts.append(text[start:].strip(" ,"))
-    return [p for p in parts if p]
+    return _resolve_context([p for p in parts if p])
+
+
+_PRONOUN = re.compile(r"^(?P<verb>\w+)-(?:la|le|les|lui)\b\s*(?P<rest>.*)$", re.I)
+_OBJECT = re.compile(r"^\w+(?:\s+-?moi)?\s+(?P<obj>.+?)(?:\s+(?:sur|dans|avec)\s+\S+)?$", re.I)
+_APP_CTX = re.compile(r"(?:^ouvr\w*\s+(?:l'app(?:lication)?\s+)?|\s(?:sur|dans)\s+)(?P<app>[A-Za-zÀ-ÿ][\w-]*)\s*$", re.I)
+_CONTEXT_VERBS = re.compile(r"^(?:cherche|recherche|trouve|mets|joue|lance|like|aime|ajoute|écoute)\b", re.I)
+
+
+def _resolve_context(parts: list[str]) -> list[str]:
+    """Rend chaque étape autonome, comme le demanderait le LLM :
+    « lance-la » -> « lance Get Lucky » ; après « ouvre Spotify », « cherche X » -> « cherche X sur Spotify »."""
+    out: list[str] = []
+    obj = app = None
+    for part in parts:
+        m = _PRONOUN.match(part)
+        if m and m.group("verb").lower() in ("like", "aime", "like-la"):
+            part = f"{m.group('verb')} le morceau en cours" + (f" {m.group('rest')}" if m.group("rest") else "")
+        elif m and obj:
+            part = f"{m.group('verb')} {obj}" + (f" {m.group('rest')}" if m.group("rest") else "")
+        if app and _CONTEXT_VERBS.match(part) and not re.search(r"\s(?:sur|dans)\s+\S+", part):
+            part = f"{part} sur {app}"
+        ctx = _APP_CTX.search(part)
+        if ctx:
+            app = ctx.group("app")
+        o = _OBJECT.match(part)
+        if o and not part.lower().startswith(("ouvr", "passe", "active")):
+            obj = o.group("obj")
+        out.append(part)
+    return out
 
 
 # ----------------------------------------------------------------------------- découpage par LLM

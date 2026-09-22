@@ -33,7 +33,8 @@ ADDRESSED_INSTRUCTIONS = (
     "rather than speech meant for another person, thinking aloud, or background noise?"
 )
 ADDRESSED_CRITERIA = {
-    "true": "A direct request or command for the computer to do something",
+    "true": "A direct request or command for the computer to do something, including very short or "
+            "casual orders such as 'like ce son', 'next', 'moins fort', 'mets du jazz'",
     "false": "Conversation with someone else, a remark, a narration of past events, a general question, or noise",
 }
 DESTRUCTIVE_INSTRUCTIONS = (

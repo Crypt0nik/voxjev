@@ -24,7 +24,9 @@ ACTION_TYPES = {
     "exec",
     "set_mode",
     "sequence",
+    "spotify",
 }
+SPOTIFY_OPS = {"play", "like", "search"}
 ARG_TYPES = {"app", "text", "enum", "mode"}
 # Champs d'action dans lesquels un placeholder `{arg}` est autorisé.
 TEMPLATED_FIELDS = {
@@ -33,6 +35,7 @@ TEMPLATED_FIELDS = {
     "open_url": {"url", "app"},
     "applescript": {"args"},
     "set_mode": {"mode"},
+    "spotify": {"query"},
 }
 URL_SCHEMES = ("https://", "http://", "mailto:")
 KEY_MODIFIERS = {"command", "shift", "option", "control"}
@@ -204,6 +207,12 @@ def _validate_action(action: dict, where: str, args: dict[str, ArgSpec], setting
             raise ConfigError(f"{where}: {argv[0]!r} absent de settings.exec_allowlist")
         if any(_placeholders(a) for a in argv):
             raise ConfigError(f"{where}: exec n'accepte aucun placeholder")
+    if kind == "spotify":
+        if action.get("op") not in SPOTIFY_OPS:
+            raise ConfigError(f"{where}: op Spotify doit être l'une de {sorted(SPOTIFY_OPS)}")
+        for name in _placeholders(action.get("query", "")):
+            if args[name].type != "text":
+                raise ConfigError(f"{where}: la requête Spotify n'accepte que des arguments texte")
     if kind == "set_mode":
         mode = action.get("mode", "")
         if not _placeholders(mode) and mode not in mode_names:

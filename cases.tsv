@@ -103,6 +103,26 @@ j'ai poussé mon code sur GitHub hier	none	travail
 crée une nouvelle note	new_note	travail
 note ça dans une nouvelle note	new_note	travail
 il a eu une bonne note à son examen	none	travail
+# --- spotify_play
+mets Blinding Lights de The Weeknd sur Spotify	spotify_play
+joue du Angèle	spotify_play
+Spotify m'a conseillé une super chanson hier	none
+# --- spotify_like
+like la chanson qui passe	spotify_like
+ajoute ce titre à mes favoris Spotify	spotify_like
+j'ai liké toutes ses chansons l'an dernier	none
+# --- spotify_search
+cherche des podcasts de cuisine dans Spotify	spotify_search
+trouve la playlist Chill Hits sur Spotify	spotify_search
+j'ai cherché cette chanson partout sur Spotify	none
+# --- demandes composées (séquence attendue)
+ouvre la calculatrice et monte le son	open_app>volume_up
+ouvre Spotify puis mets Get Lucky de Daft Punk	open_app>spotify_play
+mets Stromae sur Spotify et like le morceau	spotify_play>spotify_like
+ouvre Notion, baisse le son et verrouille l'écran	open_app>volume_down>lock_screen
+passe en mode ctf et ouvre cyberchef	switch_mode>open_cyberchef
+cherche la recette des crêpes et ouvre YouTube	web_search>open_website
+ouvre chrome et cherche la météo à Lyon	web_search
 # --- hors sujet / conversation / bruit
 tu viens manger avec nous	none
 c'est quoi la capitale du Pérou	none
