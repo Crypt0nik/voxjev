@@ -99,7 +99,7 @@ def extract_args(command: Command, transcript: str, config: Config,
                 value = best_alias_match(text, cands)  # repli : app citée ailleurs dans la phrase
         elif spec.type == "enum":
             cands = {alias: key for key, v in spec.values.items() for alias in v.get("aliases", [key])}
-            key = best_alias_match(span or text, cands)
+            key = best_alias_match(span or text, cands) or spec.default or None
             value = spec.values[key]["value"] if key else None
         elif spec.type == "mode":
             cands = {alias: m.name for m in config.modes.values() for alias in (*m.aliases, m.name)}

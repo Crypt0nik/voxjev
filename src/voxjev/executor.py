@@ -13,6 +13,9 @@ STEP_TIMEOUT = 15
 class SubprocessExecutor:
     """Lance chaque étape via ``subprocess.run(argv)`` — jamais de shell."""
 
+    def __init__(self, progress=None):
+        self.progress = progress or (lambda msg: print(f"  {msg}", flush=True))
+
     def run(self, steps: list[Step]) -> None:
         for step in steps:
             if step.kind == "spotify":
@@ -22,6 +25,18 @@ class SubprocessExecutor:
                     print(f"  {run_op(*step.argv)}", flush=True)
                 except (SpotifyError, subprocess.SubprocessError) as exc:
                     raise ActionError(f"Spotify : {exc}") from exc
+                continue
+            if step.kind == "web":
+                from .webagent import WebAgentError, run_web_task
+
+                try:
+                    res = run_web_task(*step.argv, on_progress=lambda m: self.progress(f"Agent web — {m}"))
+                except WebAgentError as exc:
+                    raise ActionError(str(exc)) from exc
+                print(f"  agent web : {res.status} — {res.summary} ({len(res.actions)} actions, "
+                      f"{res.elapsed_s:.1f} s) {res.url}", flush=True)
+                if res.status != "done":
+                    raise ActionError(f"agent web : {res.summary}")
                 continue
             if step.kind != "run" or not step.argv:
                 continue

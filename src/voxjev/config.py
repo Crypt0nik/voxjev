@@ -25,6 +25,7 @@ ACTION_TYPES = {
     "set_mode",
     "sequence",
     "spotify",
+    "web_task",
 }
 SPOTIFY_OPS = {"play", "like", "search"}
 ARG_TYPES = {"app", "text", "enum", "mode"}
@@ -36,6 +37,7 @@ TEMPLATED_FIELDS = {
     "applescript": {"args"},
     "set_mode": {"mode"},
     "spotify": {"query"},
+    "web_task": {"goal", "url"},
 }
 URL_SCHEMES = ("https://", "http://", "mailto:")
 KEY_MODIFIERS = {"command", "shift", "option", "control"}
@@ -57,6 +59,7 @@ class ArgSpec:
     values: dict[str, dict] = field(default_factory=dict)  # pour type enum
     path_segment: bool = False  # pour type text : encodage d'un segment de chemin
     rewrite: tuple[tuple[re.Pattern, str], ...] = ()  # pour type text : substitutions regex
+    default: str = ""  # pour type enum : clé utilisée si rien ne correspond
 
 
 @dataclass(frozen=True)
@@ -68,6 +71,7 @@ class Command:
     action: dict
     args: dict[str, ArgSpec] = field(default_factory=dict)
     label: str = ""  # libellé court pour l'interface, ex. « Ouvrir {app} »
+    always_confirm: bool = False  # confirmation systématique (ex. agent web sur votre profil Chrome)
 
     def short(self, values: dict[str, str] | None = None) -> str:
         """Libellé lisible, arguments inclus : « Ouvrir Spotify »."""
@@ -100,6 +104,7 @@ class Settings:
     stt_prompt: str = ""
     min_record_seconds: float = 0.3
     confirm_timeout_seconds: int = 10
+    fallback_min_p: float = 0.30  # 2e option de Jev tentée si la 1re n'a pas d'argument valide
     compound_threshold: float = 0.60  # Noul « plusieurs actions » au-dessus duquel on découpe
     max_plan_steps: int = 6
     step_delay_seconds: float = 0.8  # pause après l'ouverture d'une app, avant l'étape suivante
@@ -213,6 +218,13 @@ def _validate_action(action: dict, where: str, args: dict[str, ArgSpec], setting
         for name in _placeholders(action.get("query", "")):
             if args[name].type != "text":
                 raise ConfigError(f"{where}: la requête Spotify n'accepte que des arguments texte")
+    if kind == "web_task":
+        if _placeholders(action.get("url", "")) and not all(
+                args[n].type == "enum" for n in _placeholders(action.get("url", ""))):
+            raise ConfigError(f"{where}: l'URL de départ doit venir d'un enum de la config")
+        for name in _placeholders(action.get("goal", "")):
+            if args[name].type != "text":
+                raise ConfigError(f"{where}: l'objectif n'accepte que des arguments texte")
     if kind == "set_mode":
         mode = action.get("mode", "")
         if not _placeholders(mode) and mode not in mode_names:
@@ -250,6 +262,7 @@ def _parse_args(raw: dict, where: str) -> dict[str, ArgSpec]:
             values=dict(spec.get("values", {})),
             path_segment=bool(spec.get("path_segment", False)),
             rewrite=tuple(rewrite),
+            default=str(spec.get("default", "")),
         )
     return out
 
@@ -302,6 +315,7 @@ def load_config(path: str | Path | None = None) -> Config:
             action=c["action"],
             args=args,
             label=str(c.get("label", "")),
+            always_confirm=bool(c.get("always_confirm", False)),
         )
 
     common = tuple(raw.get("common") or [])

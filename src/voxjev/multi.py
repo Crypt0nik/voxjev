@@ -107,6 +107,7 @@ class LLMSplitter:
             "model": self.model,
             "temperature": 0,
             "max_tokens": 400,
+            "reasoning": {"enabled": False},
             "messages": [
                 {"role": "system", "content": SPLIT_PROMPT.format(max_steps=max_steps)},
                 {"role": "user", "content": text},

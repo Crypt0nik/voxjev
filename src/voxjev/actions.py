@@ -35,6 +35,8 @@ class Step:
             return f"[mode -> {self.mode}]"
         if self.kind == "note":
             return f"[{self.label}]"
+        if self.kind == "web":
+            return f"[agent web depuis {self.argv[1]} : {self.argv[0]!r}]"
         if self.kind == "spotify":
             op, query = self.argv
             return f"[spotify {op}" + (f" {query!r}]" if query else "]")
@@ -131,6 +133,15 @@ def plan_action(action: dict, command: Command | None, values: dict[str, str], c
         label = {"play": f"Spotify : lancer « {query} »", "like": "Spotify : liker le morceau en cours",
                  "search": f"Spotify : chercher « {query} »"}[action["op"]]
         return [Step("spotify", (action["op"], query), label=label)]
+
+    if kind == "web_task":
+        goal = _render(action.get("goal", ""), values)
+        url = _render(action.get("url", ""), values)
+        if not goal:
+            raise ActionError("objectif web vide")
+        if not url.startswith(("https://", "http://")):
+            raise ActionError(f"URL de départ refusée : {url!r}")
+        return [Step("web", (goal, url), label=f"Agent web : « {goal[:60]} »")]
 
     if kind == "shortcut":
         return [Step("run", ("shortcuts", "run", action["name"]), label=f"raccourci {action['name']}")]

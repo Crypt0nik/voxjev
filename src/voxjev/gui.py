@@ -667,7 +667,9 @@ class Engine(threading.Thread):
         except Exception as exc:  # modèle introuvable, pas de réseau au premier lancement…
             self.ui(hud.show_message, "Whisper indisponible", str(exc), "error")
             warm = None
-        self.launcher = Launcher(self.config, self.client, self.session, executor=SubprocessExecutor(),
+        executor = SubprocessExecutor(progress=lambda m: (print(f"  {m}", flush=True),
+                                                         self.ui(hud.phase, "thinking", m, 0, True)))
+        self.launcher = Launcher(self.config, self.client, self.session, executor=executor,
                                  confirmer=self._confirm, dry_run=self.dry_run)
         self.runner = MultiRunner(self.launcher, build_splitter(s), confirm_plan=self._confirm_plan)
         print(f"Demandes composées : découpage par {self.runner.splitter.kind}", flush=True)

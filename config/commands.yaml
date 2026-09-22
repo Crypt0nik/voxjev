@@ -38,6 +38,7 @@ settings:
   confirm_timeout_seconds: 10
   # Demandes composées (« ouvre Spotify et mets du jazz ») : Jev détecte, un petit LLM découpe,
   # chaque morceau repasse par le pipeline normal. Sans OPENROUTER_API_KEY : découpage par règles.
+  fallback_min_p: 0.30       # si la commande choisie n'a pas d'argument valide, 2e option de Jev (avec confirmation)
   compound_threshold: 0.60
   max_plan_steps: 6
   step_delay_seconds: 0.8
@@ -122,7 +123,7 @@ modes:
 # Commandes disponibles dans tous les modes.
 common: [open_app, quit_app, web_search, youtube_search, open_website, volume_up, volume_down,
          toggle_mute, play_pause, next_track, screenshot, lock_screen, sleep_display,
-         empty_trash, close_window, new_tab, switch_mode, spotify_play, spotify_like, spotify_search]
+         empty_trash, close_window, new_tab, switch_mode, spotify_play, spotify_like, spotify_search, web_task]
 
 commands:
   # ---------------------------------------------------------------- apps
@@ -267,6 +268,30 @@ commands:
         patterns:
           - "(?:cherch\\w*|recherch\\w*|trouv\\w*)\\s+(?:-?moi\\s+)?(?P<query>.+?)\\s+(?:dans|sur)\\s+spotify"
     action: {type: spotify, op: search, query: "{query}"}
+
+  # ---------------------------------------------------------------- agent web
+  - id: web_task
+    label: "Agent web : « {goal} »"
+    description: "Réaliser une tâche en plusieurs étapes à l'intérieur d'un site web : remplir une recherche, choisir des filtres, trouver et ouvrir un résultat précis (vols, articles, produits, itinéraires)"
+    examples: ["trouve-moi un vol Paris Lisbonne le 12 octobre", "ouvre l'article Wikipédia sur la relativité générale", "cherche un itinéraire à vélo de Lyon à Annecy sur Google Maps"]
+    destructive: false
+    always_confirm: true   # l'agent pilote votre profil Chrome (comptes connectés)
+    args:
+      goal:
+        type: text
+        patterns: ["(?P<goal>.+)"]
+      site:
+        type: enum
+        default: google
+        values:
+          google: {aliases: [google], value: "https://www.google.com/?hl=fr"}
+          flights: {aliases: [vol, vols, avion, google flights], value: "https://www.google.com/travel/flights?hl=fr"}
+          wikipedia: {aliases: [wikipédia, wikipedia, wiki], value: "https://fr.wikipedia.org/wiki/Accueil"}
+          maps: {aliases: [maps, google maps, itinéraire, trajet], value: "https://www.google.com/maps?hl=fr"}
+          youtube: {aliases: [youtube], value: "https://www.youtube.com"}
+          amazon: {aliases: [amazon], value: "https://www.amazon.fr"}
+          github: {aliases: [github, git hub], value: "https://github.com"}
+    action: {type: web_task, goal: "{goal}", url: "{site}"}
 
   # ---------------------------------------------------------------- système
   - id: screenshot

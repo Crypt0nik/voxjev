@@ -100,6 +100,21 @@ class Launcher:
         assert cmd is not None
         out.args = extract_args(cmd, transcript, self.config, self.apps)
         if not out.args.ok:
+            # Repli : la 2e option de Jev, si elle est proche et que SES arguments sont valides
+            # (« ouvre YouTube » : open_app 0,52 sans app installée -> open_website 0,47).
+            by_id = {c.id: c for c in commands}
+            for alt_id, alt_p in out.result.runners_up(1):
+                alt = by_id.get(alt_id)
+                if alt is None or alt_p < s.fallback_min_p:
+                    continue
+                alt_args = extract_args(alt, transcript, self.config, self.apps)
+                if alt_args.ok:
+                    reason = f"repli sur la 2e option ({alt_id} p={alt_p:.2f}) : {cmd.id} sans argument valide"
+                    out.decision = Decision(Verdict.CONFIRM, alt, reason, destructive=alt.destructive,
+                                            code="fallback")
+                    cmd, out.args = alt, alt_args
+                    break
+        if not out.args.ok:
             out.status, out.error = "error", f"argument(s) manquant(s) pour {cmd.id} : {', '.join(out.args.missing)}"
             return out
         try:

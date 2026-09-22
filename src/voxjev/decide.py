@@ -48,6 +48,8 @@ def decide(result: JevResult, commands: dict[str, Command], s: Settings) -> Deci
     if destructive:
         why = "config" if cmd.destructive else f"Noul={result.destructive:.2f}"
         return Decision(Verdict.CONFIRM, cmd, f"action destructrice ({why})", destructive=True, code="destructive")
+    if cmd.always_confirm:
+        return Decision(Verdict.CONFIRM, cmd, "confirmation systématique (config)", code="always_confirm")
     if result.addressed < s.addressed_threshold:
         return Decision(Verdict.CONFIRM, cmd, code="uncertain_addressed", reason=f"adressé incertain ({result.addressed:.2f} < {s.addressed_threshold:.2f})")
     if p < s.threshold:
@@ -80,6 +82,8 @@ def explain(decision: Decision, p: float, dry_run: bool = False) -> str:
         "not_addressed": "Ne semble pas m'être adressé — ignoré.",
         "low_p": f"Commande trop incertaine ({pct}) — ignoré.",
         "destructive": "Action destructrice : confirmation obligatoire.",
+        "always_confirm": "Cette commande demande toujours une confirmation.",
+        "fallback": "Jev hésitait : 2e option retenue, confirmation demandée.",
         "uncertain_addressed": "Pas sûr que ça m'était adressé : confirmation demandée.",
         "medium_p": f"Confiance moyenne ({pct}) : confirmation demandée.",
         "ok": f"Confiance {pct} : " + ("aurait été exécuté directement." if dry_run else "exécution directe."),

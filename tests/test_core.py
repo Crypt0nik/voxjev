@@ -267,3 +267,29 @@ def test_command_short_label(config):
     assert config.commands["open_app"].short({"app": "Spotify"}) == "Ouvrir Spotify"
     assert config.commands["volume_up"].short() == "Monter le volume"
     assert all(c.label for c in config.commands.values())
+
+
+def test_runner_up_fallback_when_args_invalid(config):
+    r = JevResult("open_app", {"open_app": 0.52, "open_website": 0.47, NONE: 0.01}, 0.49, 0.92, 0.04)
+    launcher = make_launcher(config, {"ouvre YouTube": r})
+    out = launcher.handle("ouvre YouTube")
+    assert out.command_id == "open_website" and out.decision.verdict == Verdict.CONFIRM
+    assert out.args.values["site"] == "https://www.youtube.com"
+
+
+def test_web_agent_guard_blocks_risky_labels():
+    from voxjev.webagent import RISKY
+
+    for label in ["Acheter maintenant", "Passer la commande", "Payer 49 €", "Book now", "Envoyer",
+                  "Supprimer le compte", "Réserver ce vol", "Publier"]:
+        assert RISKY.search(label), label
+    for label in ["Rechercher", "Pays", "Bookmarks", "Explorer", "Aller simple", "Paris (CDG)", "Ordre"]:
+        assert not RISKY.search(label), label
+
+
+def test_web_task_plan(config):
+    launcher = make_launcher(config, {"trouve un vol Paris Lisbonne": result("web_task")})
+    out = launcher.handle("trouve un vol Paris Lisbonne")
+    assert out.decision.verdict == Verdict.CONFIRM  # toujours confirmé
+    (step,) = out.steps
+    assert step.kind == "web" and step.argv[1].startswith("https://www.google.com/travel/flights")

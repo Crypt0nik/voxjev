@@ -115,6 +115,40 @@ passent par l'API Web Spotify, avec une connexion unique :
 Sans connexion, « mets X sur Spotify » ouvre la recherche de X dans l'app (sans la lancer), et
 le like explique comment se connecter.
 
+## Agent web (« trouve-moi un vol Paris Lisbonne le 12 octobre »)
+
+Pour les tâches **à l'intérieur d'un site** (remplir une recherche, choisir des filtres, ouvrir
+un résultat précis), voxjev confie le travail à
+[jev-ultrafast](https://github.com/browser-use/jev-ultrafast) (Browser Use × TypeSafe). À chaque
+étape, Jev choisit une opération et un élément de la page, et un petit LLM écrit le texte à
+taper. voxjev le pilote **pas à pas** et ajoute ses garde-fous :
+
+- **confirmation systématique** avant de démarrer (`always_confirm: true`), car l'agent pilote
+  **votre profil Chrome**, avec vos comptes connectés ;
+- **arrêt avant toute action sensible** : chaque action est inspectée avant exécution. Un
+  libellé d'achat, de paiement, de commande, de réservation, d'envoi, de publication ou de
+  suppression arrête l'agent sans cliquer, et vous rend la main ;
+- l'objectif transmis rappelle ces interdits et demande de s'arrêter dès que le résultat est
+  visible ;
+- budget de 25 actions et 90 s ;
+- le travail se fait dans un onglet en arrière-plan, puis mis au premier plan et laissé ouvert
+  pour que vous voyiez le résultat ;
+- la télémétrie de browser-harness est désactivée ;
+- le site de départ est choisi par la config (« vol » → Google Flights, « Wikipédia », « Maps »,
+  « Amazon »… ; Google par défaut).
+
+Une simple recherche (« cherche la météo à Lyon ») reste une recherche Google directe. Jev fait
+la différence (voir `cases.tsv`).
+
+## Configuration à faire une fois
+
+| Pour… | À faire |
+|---|---|
+| le découpage intelligent des demandes composées, et la saisie de texte de l'agent web | `OPENROUTER_API_KEY=...` dans `.env` (openrouter.ai › Keys ; crédits prépayés, ~0,0002 $ par usage) |
+| lancer une musique précise et liker sur Spotify | app sur developer.spotify.com (Redirect URI `http://127.0.0.1:8888/callback`), `SPOTIFY_CLIENT_ID=...` dans `.env`, puis `./voxjev --spotify-login` |
+| l'agent web | Chrome › `chrome://inspect/#remote-debugging` › cocher « Allow remote debugging », puis cliquer « Allow » à la première connexion. Vérifier avec `uv run browser-harness --doctor` |
+| le push-to-talk | Réglages › Confidentialité › Accessibilité + Surveillance de l'entrée pour votre terminal |
+
 ## Interface graphique (`./voxjev --gui`)
 
 Une petite interface native macOS, pensée pour un lanceur vocal :
