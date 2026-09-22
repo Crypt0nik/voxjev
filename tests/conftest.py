@@ -1,6 +1,10 @@
-"""Le journal des actions va dans un dossier temporaire pendant les tests."""
+"""Tests isolés : pas de réglages personnels, journal dans un dossier temporaire."""
 
-import pytest
+import os
+
+os.environ["VOXJEV_USER_CONFIG"] = "/nonexistent/voxjev-tests/settings.yaml"  # avant tout import de voxjev
+
+import pytest  # noqa: E402
 
 
 @pytest.fixture(autouse=True)

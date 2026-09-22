@@ -70,7 +70,8 @@ class Engine(threading.Thread):
         self.answers: queue.Queue = queue.Queue()
         self.deferred: list = []
         self.dry_run = dry_run
-        self.sounds = Sounds(config.settings.sounds, enabled=sound)
+        self.sound_allowed = sound  # --no-sound
+        self.sounds = Sounds(config.settings.sounds, enabled=sound and config.settings.sounds_enabled)
         self.transcriber = None
         self.launcher: Launcher | None = None
         self.speak = config.settings.speak_answers
@@ -182,11 +183,23 @@ class Engine(threading.Thread):
             except Exception as exc:
                 self.ui(hud.show_message, "Config invalide", str(exc), "error", 8.0)
                 return
+            old_hotkey = self.launcher.config.settings.hotkey
             self.launcher.config = self.config
+            s = self.config.settings
             if self.session.mode not in self.config.modes:
                 self.session.mode = self.config.default_mode
+            # réglages appliqués à chaud (fenêtre Réglages)
+            self.sounds.enabled = s.sounds_enabled and self.sound_allowed
+            self.speak = s.speak_answers
+            executor = self.launcher.executor
+            if executor is not None:
+                executor.settings = s
+                executor.speak_answers = s.speak_answers
+            self.runner.splitter = build_splitter(s)
+            if s.hotkey != old_hotkey:
+                self.ui(self.app.restart_ptt, s.hotkey)
             self.ui(self.app.rebuild_menu)
-            self.ui(hud.phase, "idle", "Configuration rechargée", 1.5)
+            self.ui(hud.phase, "idle", "Réglages appliqués", 1.2)
             return
 
         started = time.perf_counter()
@@ -326,6 +339,9 @@ class MenuTarget(NSObject):
     def showLast_(self, sender):
         self.app.show_last()
 
+    def openSettings_(self, sender):
+        self.app.open_settings()
+
     def openConfig_(self, sender):
         subprocess.Popen(["open", "-t", str(self.app.engine.config.path)])
 
@@ -394,6 +410,7 @@ class GuiApp:
         self.item = NSStatusBar.systemStatusBar().statusItemWithLength_(NSVariableStatusItemLength)
         self.ptt: PushToTalk | None = None
         self.hands_free: HandsFree | None = None
+        self.settings_window = None
         self.set_icon("loading")
         self.refresh_mode()
 
@@ -456,7 +473,8 @@ class GuiApp:
         self._add(menu, "Sons", "toggleSound:", state=e.sounds.enabled)
         self._add(menu, "Lire les réponses à voix haute", "toggleSpeak:", state=e.speak)
         self._add(menu, "Ouvrir le journal des actions", "openJournal:")
-        self._add(menu, "Ouvrir la configuration", "openConfig:", ",")
+        self._add(menu, "Réglages…", "openSettings:", ",")
+        self._add(menu, "Ouvrir la configuration (YAML)", "openConfig:")
         self._add(menu, "Recharger la configuration", "reloadConfig:", "r")
         menu.addItem_(NSMenuItem.separatorItem())
         self._add(menu, "Quitter voxjev", "quit:", "q")
@@ -484,6 +502,26 @@ class GuiApp:
             self.hands_free.stop()
             self.hud.phase("idle", "Mains libres désactivé", 1.5)
         self.rebuild_menu()
+
+    def open_settings(self) -> None:
+        from .settings import SettingsWindow
+
+        if self.settings_window is None:
+            self.settings_window = SettingsWindow(self)
+        self.settings_window.show()
+
+    def restart_ptt(self, hotkey: str) -> None:
+        """Nouvelle touche de parole, sans relancer l'app."""
+        if self.ptt is None:
+            return
+        self.ptt.stop()
+        try:
+            self.ptt = PushToTalk(hotkey, on_start=self._on_press, on_clip=self._on_clip,
+                                  on_level=lambda rms: AppHelper.callAfter(self.hud.level_push, rms))
+            self.ptt.start()
+            self.hud.phase("idle", f"Touche de parole : {hotkey_label(hotkey)}", 2.0)
+        except ValueError as exc:
+            self.hud.show_message("Touche invalide", str(exc), "error", 5.0)
 
     def popup_menu(self) -> None:
         """Affiche le menu de voxjev à l'emplacement de la souris."""

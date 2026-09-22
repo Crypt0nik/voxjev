@@ -96,6 +96,16 @@ URL_SCHEMES = ("https://", "http://", "mailto:")
 KEY_MODIFIERS = {"command", "shift", "option", "control"}
 
 DEFAULT_CONFIG = Path(__file__).resolve().parents[2] / "config" / "commands.yaml"
+# Réglages personnels (fenêtre Réglages) : fusionnés par-dessus commands.yaml, qui reste intact.
+import os as _os
+
+USER_CONFIG = Path(_os.environ.get("VOXJEV_USER_CONFIG",
+                                   "~/Library/Application Support/voxjev/settings.yaml")).expanduser()
+USER_SETTING_KEYS = {  # réglages modifiables depuis la fenêtre
+    "hotkey", "threshold", "confirm_floor", "addressed_threshold", "addressed_floor", "destructive_threshold",
+    "speak_answers", "voice", "quiet_mode", "safe_commands", "speculate", "hands_free", "wake_words",
+    "followup_seconds", "sounds_enabled", "app_aliases", "split_model",
+}
 
 
 class ConfigError(ValueError):
@@ -174,6 +184,7 @@ class Settings:
     app_aliases: dict[str, str] = field(default_factory=dict)
     none_option: dict = field(default_factory=dict)
     speak_answers: bool = True
+    sounds_enabled: bool = True
     # Mode sans confirmation : les commandes sans risque s'exécutent directement, même si Jev
     # hésite un peu (au-dessus des planchers). Les actions destructives restent toujours confirmées.
     quiet_mode: bool = True
@@ -412,12 +423,56 @@ def _check_routines(commands: dict[str, Command]) -> None:
             commands[cid] = Command(**{**cmd.__dict__, "destructive": destructive})
 
 
-def load_config(path: str | Path | None = None) -> Config:
+def read_user_config(path: Path | None = None) -> dict:
+    path = path or USER_CONFIG
+    try:
+        data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+    except FileNotFoundError:
+        return {}
+    except yaml.YAMLError as exc:
+        raise ConfigError(f"réglages personnels illisibles ({path}) : {exc}") from exc
+    if not isinstance(data, dict):
+        raise ConfigError(f"réglages personnels invalides ({path})")
+    return data
+
+
+def apply_user_config(raw: dict, user: dict) -> dict:
+    """Fusionne les réglages personnels : settings, commandes désactivées, routines ajoutées/remplacées."""
+    raw = dict(raw)
+    settings = dict(raw.get("settings") or {})
+    for key, value in (user.get("settings") or {}).items():
+        if key not in USER_SETTING_KEYS:
+            raise ConfigError(f"réglage personnel inconnu ou non modifiable : {key!r}")
+        if key == "app_aliases":
+            settings[key] = {**(settings.get(key) or {}), **(value or {})}
+        else:
+            settings[key] = value
+    raw["settings"] = settings
+    disabled = set(user.get("disabled_commands") or [])
+    if disabled:
+        raw["common"] = [c for c in raw.get("common") or [] if c not in disabled]
+        raw["modes"] = {name: {**(m or {}), "commands": [c for c in (m or {}).get("commands") or [] if c not in disabled]}
+                        for name, m in (raw.get("modes") or {}).items()}
+        settings["safe_commands"] = [c for c in settings.get("safe_commands") or [] if c not in disabled]
+    removed = set(user.get("removed_routines") or [])
+    mine = list(user.get("routines") or [])
+    ids = {r.get("id") for r in mine}
+    raw["routines"] = [r for r in raw.get("routines") or [] if r.get("id") not in removed | ids] + mine
+    if removed - ids:
+        settings["safe_commands"] = [c for c in settings.get("safe_commands") or [] if c not in removed - ids]
+    return raw
+
+
+def load_config(path: str | Path | None = None, user: dict | None = None) -> Config:
+    """``path`` absent : commands.yaml + réglages personnels. ``user`` : réglages à essayer (validation)."""
     path = Path(path) if path else DEFAULT_CONFIG
+    use_user = user is not None or path.resolve() == DEFAULT_CONFIG.resolve()
     try:
         raw: dict[str, Any] = yaml.safe_load(path.read_text(encoding="utf-8"))
     except FileNotFoundError as exc:
         raise ConfigError(f"config introuvable : {path}") from exc
+    if use_user:
+        raw = apply_user_config(raw, user if user is not None else read_user_config())
 
     s = raw.get("settings", {}) or {}
     settings = Settings(

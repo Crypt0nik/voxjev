@@ -196,6 +196,24 @@ l'accessibilité (boutons, champs, cases…), Jev choisit l'étape suivante parm
 élément sensible (envoyer, payer, supprimer, acheter…), ne tourne jamais dans un terminal et
 s'arrête après 12 actions, 60 s, ou si l'écran ne change plus. Il est toujours confirmé avant de démarrer.
 
+## Réglages (menu › Réglages…, ⌘,)
+
+Une fenêtre de réglages native, en six onglets :
+
+| Onglet | Contenu |
+|---|---|
+| **Général** | touche de parole, mode actif, réponse anticipée, mains libres (mots d'éveil, fenêtre de suite), sons, lecture à voix haute et choix de la voix, ouverture à la connexion |
+| **Confiance** | mode sans confirmation, simulation, seuils de Jev (exécuter, ignorer, « adressé », destructif) |
+| **Commandes** | activer/désactiver chaque commande, choisir celles qui s'exécutent sans confirmation (les destructives ne peuvent pas l'être), recherche |
+| **Routines** | créer, modifier, supprimer vos routines (une étape par ligne : `open_app app=Mail`, `wait 2`) |
+| **Connexions** | état des clés API (jamais affichées) et remplacement dans `.env`, connexion Spotify, pilotage de Chrome, autorisations macOS |
+| **Avancé** | Verr. Maj comme touche de parole, fichiers de config, journal, réinitialisation |
+
+Tout est appliqué immédiatement et **validé** comme la config (une valeur invalide est refusée
+avec un message). Vos choix sont enregistrés dans
+`~/Library/Application Support/voxjev/settings.yaml`, fusionné par-dessus `config/commands.yaml`
+(qui n'est jamais modifié) : *Avancé › Réinitialiser* revient aux réglages d'origine.
+
 ## Trouver le menu de voxjev
 
 L'icône 🎙 est dans la barre des menus, en haut à droite. Si vous ne la voyez pas (barre des menus

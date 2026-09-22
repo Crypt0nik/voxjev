@@ -298,3 +298,28 @@ def test_speculation_reuses_jev_answer(config):
     assert out.timings.get("speculated") == 1 and len(lz.client.calls) == 1
     lz.plan("quelle heure est-il maintenant")  # phrase différente : nouvel appel
     assert len(lz.client.calls) == 2
+
+
+# ------------------------------------------------------------------ réglages personnels
+def test_user_config_overrides_and_validation():
+    from voxjev.config import apply_user_config
+
+    base = load_config()
+    user = {"settings": {"wake_words": ["vox", "jarvis"], "threshold": 0.8, "app_aliases": {"musique": "Spotify"}},
+            "disabled_commands": ["wifi_off", "open_app"],
+            "routines": [{"id": "routine_soir", "description": "Soirée", "examples": ["mode soirée"],
+                          "steps": [{"run": "dark_mode", "with": {"theme": "sombre"}}]}],
+            "removed_routines": ["routine_matin"]}
+    c = load_config(user=user)
+    assert c.settings.wake_words == ("vox", "jarvis") and c.settings.threshold == 0.8
+    assert c.settings.app_aliases["musique"] == "Spotify" and "chrome" in c.settings.app_aliases
+    ids = {x.id for x in c.commands_for_mode("defaut")}
+    assert "wifi_off" not in ids and "open_app" not in ids and "open_app" not in c.settings.safe_commands
+    assert "routine_soir" in ids and "routine_matin" not in ids and "routine_concentration" in ids
+    assert "open_app" in {x.id for x in base.commands_for_mode("defaut")}  # la config de base est intacte
+    for bad in ({"settings": {"exec_allowlist": ["rm"]}},                     # non modifiable
+                {"settings": {"threshold": 2}},                               # invalide
+                {"routines": [{"id": "r", "description": "d", "examples": ["e"], "steps": [{"run": "nope"}]}]}):
+        with pytest.raises(ConfigError):
+            load_config(user=bad)
+    assert apply_user_config({"settings": {}}, {}) == {"settings": {}, "routines": []}
