@@ -251,3 +251,13 @@ def test_parse_yes_no(text, expected):
     from voxjev.decide import parse_yes_no
 
     assert parse_yes_no(text) is expected
+
+
+def test_explain_is_human_readable(config):
+    from voxjev.decide import explain
+
+    d = decide(result("open_app", 0.95), config.commands, config.settings)
+    assert explain(d, 0.95) == "Confiance 95 % : exécution directe."
+    assert "aurait été exécuté" in explain(d, 0.95, dry_run=True)
+    assert explain(decide(result("empty_trash", 1.0), config.commands, config.settings), 1.0).startswith("Action destructrice")
+    assert explain(decide(result(NONE, 0.99), config.commands, config.settings), 0.99).startswith("Ce n'est pas une commande")

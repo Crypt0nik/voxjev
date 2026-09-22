@@ -88,6 +88,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
 
 
 def main(argv: list[str] | None = None) -> int:
+    sys.stdout.reconfigure(line_buffering=True)  # logs lisibles en direct, même redirigés
     load_dotenv(PROJECT_ROOT / ".env")
     load_dotenv()  # .env du dossier courant, s'il existe (sans écraser)
     args = parse_args(argv)

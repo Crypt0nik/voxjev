@@ -6,6 +6,7 @@ s'allume que lorsque la touche est maintenue.
 
 from __future__ import annotations
 
+import os
 import queue
 import threading
 import time
@@ -44,7 +45,13 @@ class Recorder:
                 self._stream.stop()
                 self._stream.close()
                 self._stream = None
-            return np.concatenate(self._chunks) if self._chunks else np.zeros(0, dtype=np.float32)
+            audio = np.concatenate(self._chunks) if self._chunks else np.zeros(0, dtype=np.float32)
+        fake = os.environ.get("VOXJEV_FAKE_MIC")
+        if fake:  # débogage : la vraie touche, mais l'audio vient d'un fichier
+            from .stt import load_audio_file
+
+            return load_audio_file(fake)
+        return audio
 
 
 def accessibility_trusted() -> bool:

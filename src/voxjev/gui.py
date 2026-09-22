@@ -56,7 +56,7 @@ from .audio import PERMISSION_HELP, PushToTalk, accessibility_trusted, hotkey_la
 from .cli import format_outcome
 from .config import Config, load_config
 from .context import Session
-from .decide import parse_yes_no
+from .decide import explain, parse_yes_no
 from .executor import Sounds, SubprocessExecutor
 from .pipeline import Launcher, Outcome
 
@@ -86,7 +86,7 @@ PURPLE, TEAL, GRAY = rgb(191, 90, 242), rgb(100, 210, 255), rgb(142, 142, 147)
 
 STATUS_STYLE = {  # statut -> (libellé de la pastille, couleur, durée d'affichage)
     "executed": ("EXÉCUTÉ", GREEN, 3.5),
-    "dry_run": ("DRY-RUN", TEAL, 6.0),
+    "dry_run": ("SIMULATION", TEAL, 6.0),
     "ignored": ("IGNORÉ", GRAY, 2.5),
     "cancelled": ("ANNULÉ", ORANGE, 3.0),
     "error": ("ERREUR", RED, 6.0),
@@ -220,9 +220,20 @@ class PillButton:
         self.button.setBordered_(False)
         self.button.setTarget_(target)
         self.button.setAction_(action)
+        self.set_title(title)
+
+    def set_title(self, title: str) -> None:
         self.button.setAttributedTitle_(NSAttributedString.alloc().initWithString_attributes_(
             title, {NSFontAttributeName: NSFont.systemFontOfSize_weight_(13, SEMIBOLD),
                     NSForegroundColorAttributeName: NSColor.whiteColor()}))
+
+    def set_color(self, color) -> None:
+        self.box.setFillColor_(color)
+
+    def set_armed(self, armed: bool) -> None:
+        """Désarmé : semi-transparent et ignoré au clic (cf. HUD._click)."""
+        for v in (self.box, self.button):
+            v.setAlphaValue_(1.0 if armed else 0.35)
 
     def add_to(self, view) -> None:
         view.addSubview_(self.box)
@@ -304,24 +315,56 @@ class HUD:
         self.command = make_label(12.5, MEDIUM)
         self.detail = make_label(11.5, REGULAR, NSColor.secondaryLabelColor(), wrap=True)
         self.detail.setMaximumNumberOfLines_(3)
+        self.bars_title = make_label(10, SEMIBOLD, white(0.5))
+        self.bars_title.setStringValue_("CE QUE JEV A COMPRIS")
         self.bars = BarsView.alloc().initWithFrame_(NSMakeRect(PAD, 0, W - 2 * PAD, 0))
         self.footer = make_label(10.5, REGULAR, white(0.55), mono=True)
         self.hint = make_label(11.5, MEDIUM, white(0.85))
-        self._yes_target = ButtonTarget.alloc().initWithCallback_(lambda: self._on_confirm(True))
-        self._no_target = ButtonTarget.alloc().initWithCallback_(lambda: self._on_confirm(False))
+        # Anti-clic accidentel : le HUD surgit sous le curseur, par-dessus l'app en cours.
+        # Boutons inactifs pendant ARM_DELAY, et double clic pour une action destructrice.
+        self._armed_at = 0.0
+        self._destructive = False
+        self._yes_primed = False
+        self._yes_target = ButtonTarget.alloc().initWithCallback_(lambda: self._click(True))
+        self._no_target = ButtonTarget.alloc().initWithCallback_(lambda: self._click(False))
         self.yes = PillButton("Exécuter", GREEN.colorWithAlphaComponent_(0.92), self._yes_target, "fire:")
         self.no = PillButton("Annuler", white(0.18), self._no_target, "fire:")
         for v in (self.dot, self.status, self.mode_pill, self.dry_pill, self.level, self.transcript, self.chip,
-                  self.command, self.detail, self.bars, self.footer, self.hint):
+                  self.command, self.detail, self.bars_title, self.bars, self.footer, self.hint):
             self.root.addSubview_(v)
         self.no.add_to(self.root)
         self.yes.add_to(self.root)
         self._reset_content()
 
+    ARM_DELAY = 1.2
+
+    def _click(self, yes: bool) -> None:
+        if time.monotonic() < self._armed_at:
+            return  # trop tôt : probablement un clic destiné à l'app en dessous
+        if yes and self._destructive and not self._yes_primed:
+            self._yes_primed = True
+            self.yes.set_title("Cliquer encore pour confirmer")
+            self.yes.set_color(RED.colorWithAlphaComponent_(0.92))
+            gen = self._generation
+            AppHelper.callLater(4.0, self._unprime, gen)
+            return
+        self._on_confirm(yes)
+
+    def _unprime(self, gen: int) -> None:
+        if gen == self._generation and self._yes_primed:
+            self._yes_primed = False
+            self.yes.set_title("Exécuter…" if self._destructive else "Exécuter")
+            self.yes.set_color(GREEN.colorWithAlphaComponent_(0.92))
+
+    def _arm(self, gen: int) -> None:
+        if gen == self._generation:
+            self.yes.set_armed(True)
+            self.no.set_armed(True)
+
     # ------------------------------------------------------------------ mise en page
     def _reset_content(self) -> None:
-        for v in (self.level, self.transcript, self.chip, self.command, self.detail, self.bars,
-                  self.footer, self.hint, self.yes, self.no):
+        for v in (self.level, self.transcript, self.chip, self.command, self.detail, self.bars_title,
+                  self.bars, self.footer, self.hint, self.yes, self.no):
             v.setHidden_(True)
         self.bars.rows = []
 
@@ -355,6 +398,9 @@ class HUD:
             self.detail.setFrame_(NSMakeRect(PAD, y, inner, h))
             y += h + 8
         if not self.bars.isHidden():
+            self.bars_title.setHidden_(False)
+            self.bars_title.setFrame_(NSMakeRect(PAD, y + 2, inner, 14))
+            y += 18
             h = len(self.bars.rows) * BarsView.ROW_H
             self.bars.setFrame_(NSMakeRect(PAD, y + 2, inner, h))
             self.bars.setNeedsDisplay_(True)
@@ -417,6 +463,8 @@ class HUD:
         if phase == "listening":
             self.level.reset()
             self.level.setHidden_(False)
+        else:
+            self.level.setHidden_(True)
         self._show(hide_after)
 
     def level_push(self, rms: float) -> None:
@@ -435,35 +483,39 @@ class HUD:
         self.detail.setHidden_(False)
         self._show(hide_after)
 
-    def _fill_result(self, out: Outcome, s) -> None:
+    def _fill_result(self, out: Outcome, s, dry_run: bool = False) -> None:
         r = out.result
         if out.transcript:
             self.transcript.setStringValue_(f"« {out.transcript} »")
             self.transcript.setHidden_(False)
         cmd = out.decision.command if out.decision else None
+        p = r.p_command if r else 0.0
         if cmd:
-            self.command.setStringValue_(f"{cmd.id}  ·  {cmd.description}")
+            self.command.setStringValue_(cmd.description)
         elif out.decision:
-            self.command.setStringValue_(out.decision.reason)
+            self.command.setStringValue_(explain(out.decision, p, dry_run))
         else:
             self.command.setStringValue_(out.error or "")
         self.command.setHidden_(False)
         details = []
         if out.args and out.args.values:
-            details.append("   ".join(f"{k} = {v}" for k, v in out.args.values.items()))
-        if out.decision and cmd:
-            details.append(f"Décision : {out.decision.reason}")
+            details.append("   ·   ".join(f"{k} : {v}" for k, v in out.args.values.items()))
+        if out.status == "cancelled":
+            details.append("Annulé — rien n'a été exécuté.")
+        elif out.decision and cmd:
+            details.append(explain(out.decision, p, dry_run))
         if out.error and cmd:
-            details.append(out.error)
+            details.append(f"Erreur : {out.error}")
         if details:
             self.detail.setStringValue_("\n".join(details))
             self.detail.setHidden_(False)
         if r:
             ranked = sorted(r.probabilities.items(), key=lambda kv: -kv[1])[:3]
-            rows = [(cid, p, BLUE if cid == r.command else GRAY) for cid, p in ranked]
+            rows = [("aucune commande" if cid == "none" else cid, prob, BLUE if cid == r.command else GRAY)
+                    for cid, prob in ranked]
             adr_color = GREEN if r.addressed >= s.addressed_threshold else (
                 ORANGE if r.addressed >= s.addressed_floor else RED)
-            rows.append(("adressé", r.addressed, adr_color))
+            rows.append(("m'est adressé", r.addressed, adr_color))
             rows.append(("destructif", r.destructive, RED if r.destructive >= s.destructive_threshold else GRAY))
             self.bars.rows = rows
             self.bars.setHidden_(False)
@@ -490,7 +542,7 @@ class HUD:
     def show_outcome(self, out: Outcome, s) -> None:
         self._reset_content()
         key = out.status if out.status in STATUS_STYLE else "ignored"
-        self._fill_result(out, s)
+        self._fill_result(out, s, dry_run=out.status == "dry_run")
         self._set_chip(key)
         phase = {"executed": "done", "error": "error"}.get(out.status, "idle")
         titles = {"executed": "Fait", "dry_run": "Simulation (rien n'a été exécuté)", "ignored": "Ignoré",
@@ -505,10 +557,19 @@ class HUD:
         self._set_chip("confirm")
         self.dot.setTextColor_(ORANGE)
         self.status.setStringValue_(f"Confirmation requise — {timeout} s")
-        self.hint.setStringValue_(f"Cliquez, ou maintenez {hotkey} et dites « oui » ou « non »")
+        self._destructive = bool(out.decision and out.decision.destructive)
+        self._yes_primed = False
+        self.yes.set_title("Exécuter…" if self._destructive else "Exécuter")
+        self.yes.set_color(GREEN.colorWithAlphaComponent_(0.92))
+        self.hint.setStringValue_(f"Maintenez {hotkey} et dites « oui » ou « non », ou cliquez"
+                                  + (" deux fois" if self._destructive else ""))
         for v in (self.hint, self.yes, self.no):
             v.setHidden_(False)
+        self.yes.set_armed(False)
+        self.no.set_armed(False)
+        self._armed_at = time.monotonic() + self.ARM_DELAY
         self._show()
+        AppHelper.callLater(self.ARM_DELAY, self._arm, self._generation)
 
     def confirm_countdown(self, left: int) -> None:
         if not self.hint.isHidden():
@@ -615,6 +676,7 @@ class Engine(threading.Thread):
             text, stt_ms = self.transcriber.transcribe(audio)
             timings = {"audio_s": held, "stt_ms": stt_ms}
             if not text:
+                print(f"(rien compris — {held:.1f} s d'audio)", flush=True)
                 self.sounds.play("ignored")
                 self.ui(hud.phase, "idle", "Rien compris", 1.5)
                 self.ui(self.app.set_icon, "idle")
@@ -642,6 +704,7 @@ class Engine(threading.Thread):
         while not self.answers.empty():
             self.answers.get_nowait()
         preview = self.launcher.current or Outcome(transcript="", decision=decision, args=args, steps=steps)
+        print(f"  confirmation demandée ({decision.reason}) — {s.confirm_timeout_seconds} s", flush=True)
         self.ui(hud.ask_confirm, preview, s, s.confirm_timeout_seconds, hotkey_label(s.hotkey))
         self.ui(self.app.set_icon, "confirm")
         self.sounds.play("listening")

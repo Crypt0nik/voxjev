@@ -34,14 +34,11 @@ Le premier lancement en mode micro télécharge le modèle Whisper (~1,5 Go, une
 
 voxjev vérifie l'accessibilité au démarrage et affiche la marche à suivre si elle manque.
 
-> **Projet dans `~/Documents` synchronisé par iCloud** : iCloud marque les fichiers de `.venv`
-> comme « cachés » (Python ignore alors les `.pth`) et ralentit énormément les imports.
-> L'environnement vit donc dans `.venv.nosync` (ignoré par iCloud), et `.venv` n'est qu'un lien
-> symbolique vers ce dossier. Pour le recréer : `rm -rf .venv .venv.nosync && uv venv .venv.nosync && ln -s .venv.nosync .venv && uv sync`.
-> Le lanceur `./voxjev` ajoute `src/` au `PYTHONPATH` pour ne pas dépendre du `.pth`, et
-> place les caches `.pyc` dans `~/Library/Caches/voxjev` : iCloud verrouille les fichiers
-> qu'il synchronise, ce qui peut bloquer un import pendant des dizaines de secondes.
-> **Le mieux reste de placer le projet hors de `~/Documents`** (par ex. `~/dev/jev_AI`).
+> **Ne placez pas le projet dans un dossier synchronisé par iCloud** (`~/Documents`,
+> `~/Desktop`) : iCloud évince et verrouille les fichiers, ce qui rendait les imports et les
+> tests plus de 100 fois plus lents (178 s contre 1,2 s pour les tests). Le projet vit dans
+> `~/dev/jev_AI`. Par précaution, le lanceur `./voxjev` place quand même les caches `.pyc`
+> dans `~/Library/Caches/voxjev` et ajoute `src/` au `PYTHONPATH`.
 
 ## Utilisation
 
@@ -93,6 +90,9 @@ Une petite interface native macOS, pensée pour un lanceur vocal :
 - **Confirmation sans voler le focus** : cliquez sur *Exécuter* / *Annuler* dans le HUD, ou
   maintenez la touche et dites « oui » / « non ». La réponse vocale est analysée par du code
   déterministe, sans appel à Jev. Sans réponse au bout de 10 s, l'action est annulée.
+- **Anti-clic accidentel** : le HUD apparaît par-dessus votre travail, parfois sous le curseur.
+  Ses boutons sont donc inactifs pendant 1,2 s (affichés en transparence), et une action
+  destructrice demande **deux clics** (« Exécuter… » puis « Cliquer encore pour confirmer »).
 - Tout le travail lourd (Whisper, Jev, actions) tourne dans un seul thread dédié.
   L'interface reste fluide.
 
@@ -102,7 +102,10 @@ Une petite interface native macOS, pensée pour un lanceur vocal :
 ./voxjev --gui --text "ouvre notion"   # démarre en traitant une phrase de démo
 ```
 
-Débogage : `VOXJEV_SNAPSHOT=/tmp/hud ./voxjev --gui ...` enregistre un PNG du HUD à chaque affichage.
+Débogage :
+- `VOXJEV_SNAPSHOT=/tmp/hud ./voxjev --gui ...` enregistre un PNG du HUD à chaque affichage ;
+- `VOXJEV_FAKE_MIC=phrase.aiff ./voxjev --gui ...` utilise la vraie touche, mais l'audio vient du fichier (utile quand
+  le micro ne peut pas entendre le haut-parleur, par exemple avec des AirPods).
 
 ## Règles de décision (code, `src/voxjev/decide.py`)
 
