@@ -945,10 +945,30 @@ class MenuTarget(NSObject):
         self.app.quit()
 
 
+class AppDelegate(NSObject):
+    """Rouvrir voxjev (Spotlight, Finder, Dock) affiche son menu sous la souris.
+
+    Utile quand macOS masque l'icône (barre des menus pleine, encoche, Réglages › Barre des menus).
+    """
+
+    def initWithApp_(self, app):
+        self = objc.super(AppDelegate, self).init()
+        if self is None:
+            return None
+        self.app = app
+        return self
+
+    def applicationShouldHandleReopen_hasVisibleWindows_(self, nsapp, flag):
+        self.app.popup_menu()
+        return False
+
+
 class GuiApp:
     def __init__(self, config: Config, client, session: Session, dry_run: bool, sound: bool):
         self.nsapp = NSApplication.sharedApplication()
         self.nsapp.setActivationPolicy_(ACCESSORY_POLICY)
+        self.delegate = AppDelegate.alloc().initWithApp_(self)
+        self.nsapp.setDelegate_(self.delegate)
         self.hud = HUD(on_confirm=lambda ok: self.engine.answers.put(ok))
         self.engine = Engine(self, config, client, session, dry_run, sound)
         self.history: collections.deque = collections.deque(maxlen=15)
@@ -1048,6 +1068,15 @@ class GuiApp:
             self.hands_free.stop()
             self.hud.phase("idle", "Mains libres désactivé", 1.5)
         self.rebuild_menu()
+
+    def popup_menu(self) -> None:
+        """Affiche le menu de voxjev à l'emplacement de la souris."""
+        from AppKit import NSEvent
+
+        print("menu affiché sous la souris (app rouverte)", flush=True)
+        self.rebuild_menu()
+        self.nsapp.activateIgnoringOtherApps_(True)
+        self.item.menu().popUpMenuPositioningItem_atLocation_inView_(None, NSEvent.mouseLocation(), None)
 
     def refresh_mode(self) -> None:
         self.hud.set_mode(self.engine.session.mode, self.engine.dry_run)

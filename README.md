@@ -196,6 +196,12 @@ l'accessibilité (boutons, champs, cases…), Jev choisit l'étape suivante parm
 élément sensible (envoyer, payer, supprimer, acheter…), ne tourne jamais dans un terminal et
 s'arrête après 12 actions, 60 s, ou si l'écran ne change plus. Il est toujours confirmé avant de démarrer.
 
+## Trouver le menu de voxjev
+
+L'icône 🎙 est dans la barre des menus, en haut à droite. Si vous ne la voyez pas (barre des menus
+masquée automatiquement, barre pleine derrière l'encoche, ou app masquée dans Réglages › Barre des
+menus) : **rouvrez voxjev** depuis Spotlight (⌘ Espace, « voxjev ») et son menu s'affiche sous la souris.
+
 ## Mode sans confirmation (activé par défaut)
 
 Les commandes sans risque de `settings.safe_commands` s'exécutent **directement**, même quand Jev
