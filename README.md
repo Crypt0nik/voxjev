@@ -154,16 +154,21 @@ Le détail complet est dans le [guide](docs/GUIDE.md#données-envoyées-à-lapi-
 ## Qualité
 
 ```bash
-uv run pytest          # 106 tests, 100 % hors ligne (faux client Jev)
+uv run pytest          # 112 tests, 100 % hors ligne (faux client Jev)
 ./voxjev --eval        # jeu de 175 phrases, dont des phrases proches qui ne doivent PAS déclencher
 ```
 
 | Mesure | Résultat |
 |---|---|
-| Exactitude globale | **97,7 %** (175 phrases) |
-| Exécutions par erreur | **0** (les rares faux positifs passent par une confirmation) |
+| Exactitude globale | **≈ 97 %** sur 175 phrases (96,6 % et 97,1 % sur deux mesures) |
+| Exécutions par erreur | **0** : les rares faux positifs passent tous par une confirmation |
+| Demandes composées | 9 plans sur 9 exacts |
 | Latence Jev | p50 ~300 ms |
 | Coût | ~0,0003 $ par phrase (environ 1 $/mois pour 100 commandes par jour) |
+
+Jev étant probabiliste, l'exactitude varie d'environ un point d'une mesure à l'autre. Les trois
+phrases de conversation qui déclenchent encore (« ferme la fenêtre il fait froid »…) passent par
+une confirmation : aucune n'est exécutée directement.
 
 ## Architecture
 
