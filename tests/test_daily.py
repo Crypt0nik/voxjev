@@ -356,3 +356,52 @@ def test_page_link_is_deferred_in_compound_plans(config):
     plan = MultiRunner(lz, Splitter()).handle("cherche la météo puis ouvre le premier résultat")
     step = plan.items[1].steps[0]
     assert step.kind == "page_link" and step.argv == ("ouvre le premier résultat",)  # choisi à l'exécution
+
+
+# ------------------------------------------------------------------ rangement des fenêtres
+def test_layout_slots_never_overlap():
+    from voxjev.layout import position_frame, slots
+
+    area = (0, 25, 1440, 875)
+    for n in range(1, 8):
+        frames = slots(n, area)
+        assert len(frames) == n
+        for i, a in enumerate(frames):
+            assert a[0] >= area[0] and a[1] >= area[1] and a[0] + a[2] <= 1440 and a[1] + a[3] <= 900
+            for b in frames[i + 1:]:  # aucune superposition
+                assert a[0] + a[2] <= b[0] or b[0] + b[2] <= a[0] or a[1] + a[3] <= b[1] or b[1] + b[3] <= a[1]
+    left, right = slots(2, area)
+    assert left[0] < right[0] and left[2] == right[2]
+    big, top, bottom = slots(3, area)
+    assert big[3] > top[3] and top[0] == bottom[0]
+    assert position_frame("right", area)[0] > 700
+
+
+def test_window_commands(config):
+    lz = launcher(config, {"mets Chrome à gauche et Safari à droite": res("window_pair"),
+                           "mets cette fenêtre en haut à droite": res("window_place"),
+                           "range les fenêtres": res("tile_windows")})
+    out = lz.plan("mets Chrome à gauche et Safari à droite")
+    assert out.steps[0].kind == "layout_pair" and out.steps[0].argv == ("Google Chrome", "Safari")
+    assert lz.plan("mets cette fenêtre en haut à droite").steps[0].argv == ("top_right",)
+    assert lz.plan("range les fenêtres").steps[0].argv == ("tile",)
+    assert config.commands["tile_windows"].undo == {"type": "layout", "arrangement": "restore"}
+
+
+def test_layout_config_validation(tmp_path):
+    body = textwrap.dedent("""
+    modes: {defaut: {commands: []}}
+    common: [x]
+    commands:
+      - id: x
+        description: d
+        examples: [e]
+        destructive: false
+        action: ACTION
+    """)
+    p = tmp_path / "c.yaml"
+    p.write_text(body.replace("ACTION", "{type: layout, arrangement: tile}"))
+    load_config(p)
+    p.write_text(body.replace("ACTION", "{type: layout, arrangement: explode}"))
+    with pytest.raises(ConfigError):
+        load_config(p)

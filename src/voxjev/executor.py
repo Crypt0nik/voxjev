@@ -77,6 +77,15 @@ class SubprocessExecutor:
     """
 
     timers = Timers()
+    _layouts = None
+
+    @property
+    def layouts(self):
+        if SubprocessExecutor._layouts is None:
+            from .layout import Layouts
+
+            SubprocessExecutor._layouts = Layouts()
+        return SubprocessExecutor._layouts
 
     def __init__(self, progress=None, client=None, settings=None, speak_answers: bool | None = None):
         self.progress = progress or (lambda msg: print(f"  {msg}", flush=True))
@@ -234,6 +243,24 @@ class SubprocessExecutor:
             if res.status != "done":
                 raise ActionError(summary)
             return summary
+        if k in ("layout", "layout_pair"):
+            from .layout import LayoutError
+
+            try:
+                if k == "layout_pair":
+                    self.layouts.pair(*step.argv)
+                    return None
+                arrangement = step.argv[0]
+                if arrangement == "tile":
+                    n = self.layouts.tile()
+                    return f"{n} fenêtre{'s' if n > 1 else ''} rangée{'s' if n > 1 else ''}."
+                if arrangement == "restore":
+                    self.layouts.restore()
+                    return None
+                self.layouts.place_front(arrangement)
+                return None
+            except LayoutError as exc:
+                raise ActionError(str(exc)) from exc
         if k == "navigate":
             from .chrome import ChromeError, navigate
 
@@ -250,13 +277,35 @@ class SubprocessExecutor:
             return None
         argv = step.argv
         if argv[0] == "open" and argv[-1].startswith(("http://", "https://")) and len(argv) in (2, 4):
-            from .chrome import open_in_browser  # nouvel onglet actif (pas « Little Arc »)
-
             app = argv[2] if len(argv) == 4 and argv[1] == "-a" else None
-            if open_in_browser(argv[-1], app):
+            if self._open_page(argv[-1], app):
                 return None
         self._subprocess(step)
         return None
+
+    def _open_page(self, url: str, app: str | None) -> bool:
+        """Page web : nouvel onglet actif ; avec le rangement automatique, nouvelle fenêtre placée à
+        côté de la fenêtre que l'on regardait (aucune superposition)."""
+        from .chrome import open_in_browser, target_browser
+
+        browser = app or target_browser()
+        if not getattr(self.settings, "auto_layout", False):
+            return open_in_browser(url, browser)
+        from .layout import LayoutError, fingerprint, visible_windows, wait_new_window
+
+        try:
+            before = visible_windows()
+        except Exception:
+            return open_in_browser(url, browser)
+        if not open_in_browser(url, browser, new_window=True):
+            return False
+        new = wait_new_window(browser, fingerprint(before))
+        if new is not None:
+            try:
+                self.layouts.beside(new, before)
+            except LayoutError as exc:
+                self.progress(f"rangement impossible : {exc}")
+        return True
 
     def _page_link(self, transcript: str) -> None:
         """Lien choisi une fois la page chargée (étape d'une demande composée)."""

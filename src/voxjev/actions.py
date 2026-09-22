@@ -331,6 +331,20 @@ def plan_action(action: dict, command: Command | None, values: dict[str, str], c
         return [Step("info", (topic,), label={"time": "Heure", "date": "Date", "battery": "Batterie",
                                                 "timers": "Minuteurs en cours"}[topic])]
 
+    if kind == "layout":
+        arrangement = val("arrangement")
+        labels = {"tile": "Ranger les fenêtres", "restore": "Remettre les fenêtres comme avant",
+                  "left": "Fenêtre à gauche", "right": "Fenêtre à droite", "top": "Fenêtre en haut",
+                  "bottom": "Fenêtre en bas", "full": "Fenêtre en grand", "center": "Fenêtre au centre",
+                  "top_left": "Fenêtre en haut à gauche", "top_right": "Fenêtre en haut à droite",
+                  "bottom_left": "Fenêtre en bas à gauche", "bottom_right": "Fenêtre en bas à droite"}
+        return [Step("layout", (arrangement,), label=labels.get(arrangement, f"Fenêtre : {arrangement}"))]
+
+    if kind == "layout_pair":
+        left = _resolve_app(val("left"), [], installed)
+        right = _resolve_app(val("right"), [], installed)
+        return [Step("layout_pair", (left, right), label=f"{left} à gauche, {right} à droite")]
+
     if kind == "page_link":
         return [Step("page_link", (), label="Lien de la page (navigateur)")]
 

@@ -47,7 +47,11 @@ ACTION_TYPES = {
     "ask",            # question générale -> réponse courte d'un LLM (OpenRouter)
     "desktop_task",   # agent bureau : plusieurs clics dans l'app au premier plan
     "page_link",      # ouvrir un lien de la page Chrome active (« le 2ᵉ lien », « le meilleur résultat »)
+    "layout",         # ranger les fenêtres : grille, moitié d'écran, annuler le rangement
+    "layout_pair",    # deux apps côte à côte
 }
+LAYOUT_ARRANGEMENTS = {"tile", "restore", "left", "right", "top", "bottom", "full", "center",
+                       "top_left", "top_right", "bottom_left", "bottom_right"}
 SPOTIFY_OPS = {"play", "like", "search"}
 ARG_TYPES = {"app", "text", "enum", "mode", "pick", "duration", "when"}
 PICK_SOURCES = {"menu", "shortcut"}
@@ -75,12 +79,16 @@ TYPED_FIELDS = {
     ("memory_forget", "question"): {"text"},
     ("ask", "question"): {"text"},
     ("desktop_task", "goal"): {"text"},
+    ("layout", "arrangement"): {"enum"},
+    ("layout_pair", "left"): {"app"},
+    ("layout_pair", "right"): {"app"},
 }
 REQUIRED_FIELDS = {
     "menu": ("item",), "type_text": ("text",), "keycombo": ("combo",), "timer": ("seconds",),
     "reminder": ("title",), "calendar_add": ("title", "when"), "note_add": ("body",),
     "info": ("what",), "file_open": ("query",), "memory_add": ("fact",), "memory_ask": ("question",),
     "memory_forget": ("question",), "ask": ("question",), "desktop_task": ("goal",),
+    "layout": ("arrangement",), "layout_pair": ("left", "right"),
 }
 COMBO_RE = re.compile(r"(?:(?:cmd|shift|alt|ctrl)\+)*(?:[a-z0-9,.;/'\[\]=`-]|code:\d{1,3})")
 # Champs d'action dans lesquels un placeholder `{arg}` est autorisé.
@@ -105,7 +113,7 @@ USER_CONFIG = Path(_os.environ.get("VOXJEV_USER_CONFIG",
 USER_SETTING_KEYS = {  # réglages modifiables depuis la fenêtre
     "hotkey", "threshold", "confirm_floor", "addressed_threshold", "addressed_floor", "destructive_threshold",
     "speak_answers", "voice", "quiet_mode", "safe_commands", "speculate", "hands_free", "wake_words",
-    "followup_seconds", "sounds_enabled", "app_aliases", "split_model",
+    "followup_seconds", "sounds_enabled", "app_aliases", "split_model", "auto_layout",
 }
 
 
@@ -186,6 +194,7 @@ class Settings:
     none_option: dict = field(default_factory=dict)
     speak_answers: bool = True
     sounds_enabled: bool = True
+    auto_layout: bool = True  # nouvelles pages web : nouvelle fenêtre rangée à côté de la fenêtre courante
     # Mode sans confirmation : les commandes sans risque s'exécutent directement, même si Jev
     # hésite un peu (au-dessus des planchers). Les actions destructives restent toujours confirmées.
     quiet_mode: bool = True
@@ -272,6 +281,8 @@ def _validate_action(action: dict, where: str, args: dict[str, ArgSpec], setting
                 raise ConfigError(f"{where}: raccourci clavier invalide {value!r}")
             if kind == "info" and value not in INFO_TOPICS:
                 raise ConfigError(f"{where}: info doit être l'un de {sorted(INFO_TOPICS)}")
+            if kind == "layout" and value not in LAYOUT_ARRANGEMENTS:
+                raise ConfigError(f"{where}: rangement inconnu {value!r}")
             if kind in ("menu", "timer", "reminder", "calendar_add", "file_open", "desktop_task", "ask"):
                 raise ConfigError(f"{where}: {field_name!r} doit venir d'un argument")
             continue
@@ -289,6 +300,10 @@ def _validate_action(action: dict, where: str, args: dict[str, ArgSpec], setting
             bad = [v.get("value") for v in spec.values.values() if v.get("value") not in INFO_TOPICS]
             if bad:
                 raise ConfigError(f"{where}: sujets inconnus dans l'enum {name!r} : {bad}")
+        if kind == "layout":
+            bad = [v.get("value") for v in spec.values.values() if v.get("value") not in LAYOUT_ARRANGEMENTS]
+            if bad:
+                raise ConfigError(f"{where}: rangements inconnus dans l'enum {name!r} : {bad}")
     if kind == "type_text" and not isinstance(action.get("submit", False), bool):
         raise ConfigError(f"{where}: 'submit' doit être true/false")
     if kind == "routine":

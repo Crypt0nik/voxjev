@@ -206,12 +206,25 @@ _NEW_TAB["Safari"] = ["on run argv", 'tell application "Safari"', "if (count of 
                       "activate", "end tell", "end run"]
 
 
-def open_in_browser(url: str, browser: str | None = None) -> bool:
-    """Ouvre `url` (http/https) dans un nouvel onglet actif. False si le navigateur n'est pas pilotable."""
+_NEW_WINDOW = {
+    "Arc": ["on run argv", 'tell application "Arc"', "make new window",
+            "tell front window to make new tab with properties {URL:(item 1 of argv)}", "activate", "end tell",
+            "end run"],
+    **{name: ["on run argv", f'tell application "{name}"', "make new window",
+              "set URL of active tab of front window to (item 1 of argv)", "activate", "end tell", "end run"]
+       for name in ("Google Chrome", "Brave Browser", "Microsoft Edge", "Vivaldi")},
+    "Safari": ["on run argv", 'tell application "Safari"', "make new document with properties {URL:(item 1 of argv)}",
+               "activate", "end tell", "end run"],
+}
+
+
+def open_in_browser(url: str, browser: str | None = None, new_window: bool = False) -> bool:
+    """Ouvre `url` (http/https) dans un nouvel onglet actif, ou une nouvelle fenêtre (rangement
+    automatique). False si le navigateur n'est pas pilotable."""
     if not re.match(r"^https?://", url, re.I):
         return False
     browser = browser or target_browser()
-    lines = _NEW_TAB.get(browser)
+    lines = (_NEW_WINDOW if new_window else _NEW_TAB).get(browser)
     if not lines:
         return False
     try:

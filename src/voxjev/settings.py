@@ -153,7 +153,8 @@ TILE_COLORS = {
     "calendar": (255, 59, 48), "capslock": (142, 142, 147), "doc.text": (0, 122, 255),
     "person.crop.circle": (142, 142, 147), "list.bullet.rectangle": (255, 149, 0), "arrow.clockwise": (52, 199, 89),
     "arrow.counterclockwise": (255, 59, 48), "gearshape": (142, 142, 147), "command": (88, 86, 214),
-    "list.bullet.rectangle.portrait": (255, 149, 0), "key": (255, 204, 0), "slider.horizontal.3": (100, 100, 110),
+    "list.bullet.rectangle.portrait": (255, 149, 0), "rectangle.split.2x1": (0, 122, 255),
+    "rectangle.grid.2x2": (88, 86, 214), "key": (255, 204, 0), "slider.horizontal.3": (100, 100, 110),
 }
 
 
@@ -570,6 +571,14 @@ class SettingsWindow:
                 self.switch(s.speak_answers, lambda on: self.set_setting("speak_answers", on)), "text.bubble"),
             row("Voix", None, hstack([self.popup(voices, s.voice, lambda v: self.set_setting("voice", v)),
                                       self.button("Écouter", self._try_voice)], 8), "person.wave.2"),
+        ])
+        page.section("Fenêtres", [
+            row("Ranger les nouvelles pages", "Une page ouverte par voxjev s'ouvre dans une nouvelle fenêtre, placée "
+                "à côté de ce que vous regardiez (jamais par-dessus).",
+                self.switch(s.auto_layout, lambda on: self.set_setting("auto_layout", on)), "rectangle.split.2x1"),
+            row("Ranger toutes les fenêtres", "Ou dites « range les fenêtres ».",
+                self.button("Ranger maintenant", lambda: self.engine.jobs.put(("text", "range les fenêtres"))),
+                "rectangle.grid.2x2"),
         ])
         page.section("Démarrage", [
             row("Ouvrir voxjev à l'ouverture de session", None,

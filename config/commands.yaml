@@ -58,6 +58,7 @@ settings:
   exec_allowlist: [pmset, networksetup]
   # Retours : les réponses (agenda, heure, questions…) sont lues à voix haute (say).
   speak_answers: true
+  auto_layout: true          # nouvelle page web : nouvelle fenêtre rangée à côté de la fenêtre courante
   voice: ""                 # voix de `say` (vide = voix du système ; ex. Thomas, Amélie)
   # Mode sans confirmation (activable dans le menu) : ces commandes sans risque s'exécutent
   # directement dès que Jev les reconnaît au-dessus des planchers (confirm_floor, addressed_floor).
@@ -69,7 +70,8 @@ settings:
                   agenda_read, reminder_add, event_add, note_add, open_file, reveal_file, memory_add,
                   memory_ask, ask_question, screenshot, github_search, exploitdb_search, cve_search,
                   gtfobins_lookup, open_revshells, open_cyberchef, new_terminal_tab, new_email, new_note,
-                  routine_matin, routine_concentration, undo_last, web_task, page_link]
+                  routine_matin, routine_concentration, undo_last, web_task, page_link,
+                  tile_windows, window_place, window_pair, layout_restore]
   pick_min_p: 0.50           # choix de Jev parmi des candidats réels (menus, Raccourcis, segments, fichiers)
   # Jamais de saisie dictée ni d'agent bureau dans ces apps (un texte dicté n'y devient pas une commande).
   terminal_apps: [Terminal, iTerm2, Ghostty, Warp, kitty, Alacritty, WezTerm, Hyper, Tabby, Visual Studio Code, Cursor]
@@ -145,7 +147,7 @@ common: [open_app, quit_app, web_search, youtube_search, open_website, volume_up
          menu_item, run_shortcut, type_text, type_text_enter, key_shortcut, scroll, dark_mode, brightness_up,
          brightness_down, wifi_off, wifi_on, set_timer, info, reminder_add, event_add, agenda_read, note_add,
          mail_draft, mail_triage, open_file, reveal_file, memory_add, memory_ask, memory_forget, ask_question,
-         desktop_task, page_link]
+         desktop_task, page_link, tile_windows, window_place, window_pair, layout_restore]
 
 commands:
   # ---------------------------------------------------------------- apps
@@ -826,6 +828,63 @@ commands:
     examples: ["clique sur le deuxième lien", "ouvre le premier résultat", "ouvre le meilleur résultat", "clique sur le lien Wikipédia", "ouvre celui du Routard", "ouvre l'article du Monde"]
     destructive: false
     action: {type: page_link}
+
+  # ---------------------------------------------------------------- fenêtres
+  - id: tile_windows
+    label: "Ranger les fenêtres"
+    description: "Ranger toutes les fenêtres visibles à l'écran sans qu'elles se superposent (côte à côte, en grille)"
+    examples: ["range les fenêtres", "organise mon écran", "mets les fenêtres côte à côte", "range tout ça en grille"]
+    destructive: false
+    action: {type: layout, arrangement: tile}
+    undo: {type: layout, arrangement: restore}
+
+  - id: window_place
+    label: "Fenêtre : {position}"
+    description: "Placer la fenêtre au premier plan sur une moitié ou un quart de l'écran, ou la mettre en grand"
+    examples: ["mets cette fenêtre à gauche", "mets la fenêtre à droite", "cette fenêtre en haut à droite", "mets la fenêtre en grand"]
+    destructive: false
+    args:
+      position:
+        type: enum
+        values:
+          top_left: {aliases: [en haut à gauche, coin haut gauche], value: top_left}
+          top_right: {aliases: [en haut à droite, coin haut droit], value: top_right}
+          bottom_left: {aliases: [en bas à gauche, coin bas gauche], value: bottom_left}
+          bottom_right: {aliases: [en bas à droite, coin bas droit], value: bottom_right}
+          left: {aliases: [à gauche, moitié gauche, gauche], value: left}
+          right: {aliases: [à droite, moitié droite, droite], value: right}
+          top: {aliases: [en haut, moitié haute], value: top}
+          bottom: {aliases: [en bas, moitié basse], value: bottom}
+          full: {aliases: [en grand, tout l'écran, maximise, agrandis la fenêtre], value: full}
+          center: {aliases: [au centre, au milieu, centre], value: center}
+    action: {type: layout, arrangement: "{position}"}
+    undo: {type: layout, arrangement: restore}
+
+  - id: window_pair
+    label: "{left} à gauche, {right} à droite"
+    description: "Mettre deux applications côte à côte, l'une à gauche et l'autre à droite"
+    examples: ["mets Chrome à gauche et Spotify à droite", "Notes à gauche et Safari à droite", "mets Mail et Calendrier côte à côte"]
+    destructive: false
+    args:
+      left:
+        type: app
+        patterns:
+          - "(?:mets\\s+)?(?P<left>.+?)\\s+à\\s+gauche"
+          - "(?:mets\\s+)?(?P<left>.+?)\\s+et\\s+.+?\\s+côte à côte"
+      right:
+        type: app
+        patterns:
+          - "et\\s+(?P<right>.+?)\\s+à\\s+droite"
+          - "et\\s+(?P<right>.+?)\\s+côte à côte"
+    action: {type: layout_pair, left: "{left}", right: "{right}"}
+    undo: {type: layout, arrangement: restore}
+
+  - id: layout_restore
+    label: "Fenêtres comme avant"
+    description: "Remettre les fenêtres comme elles étaient avant le dernier rangement"
+    examples: ["remets les fenêtres comme avant", "annule le rangement", "replace les fenêtres comme avant"]
+    destructive: false
+    action: {type: layout, arrangement: restore}
 
   # ---------------------------------------------------------------- agent bureau
   - id: desktop_task

@@ -45,6 +45,7 @@ prend le chemin inverse : **le modèle ne fait que choisir, le code exécute.**
 | **Notes et mails** | « note que je dois acheter des piles », « écris un mail à Paul pour lui dire que je serai en retard » (brouillon, jamais envoyé), « quels mails demandent une action ? » |
 | **Fichiers et mémoire** | « ouvre le fichier rapport de stage », « retiens que mon dentiste c'est le Dr Martin », « c'est qui mon dentiste ? » |
 | **Système** | « mode sombre », « plus de lumière », « coupe le wifi », « annule ça » |
+| **Fenêtres** | « range les fenêtres », « mets cette fenêtre à gauche », « mets Chrome à gauche et Spotify à droite », « remets les fenêtres comme avant » ; chaque page ouverte par voxjev se range à côté de la fenêtre courante |
 | **Plusieurs actions** | « ouvre Spotify, cherche Get Lucky puis lance-la » |
 | **Tâches web et bureau** | « trouve-moi un vol Paris Lisbonne le 12 octobre » (agent qui s'arrête avant tout achat) |
 | **Routines** | « lance ma routine du matin » : vos enchaînements, définis dans les Réglages |
