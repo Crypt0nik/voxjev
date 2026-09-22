@@ -242,7 +242,19 @@ def target_browser() -> str:
     return "Google Chrome"
 
 
-def _osascript(line: str, arg: str, timeout: float = 10) -> str:
+HOW_TO_ALLOW = {
+    "Google Chrome": "Chrome : chrome://inspect/#remote-debugging › « Allow remote debugging » (puis « Allow »), "
+                     "ou Affichage › Options pour les développeurs › Autoriser JavaScript à partir des événements Apple",
+    "Brave Browser": "Brave : Affichage › Options pour les développeurs › Autoriser JavaScript à partir des événements Apple",
+    "Microsoft Edge": "Edge : Affichage › Développeur › Autoriser JavaScript à partir des événements Apple",
+    "Vivaldi": "Vivaldi : autorisez voxjev dans Réglages › Confidentialité › Automatisation",
+    "Arc": "Arc : autorisez voxjev dans Réglages › Confidentialité › Automatisation",
+    "Safari": "Safari : Réglages › Avancées › Afficher les fonctionnalités de développement, puis "
+              "Développement › Autoriser le JavaScript depuis les événements Apple",
+}
+
+
+def _osascript(line: str, arg: str, timeout: float = 10, browser: str = "") -> str:
     script = ["on run argv", line, "end run"]
     try:
         r = subprocess.run(["osascript", *[x for ln in script for x in ("-e", ln)], arg],
@@ -252,9 +264,8 @@ def _osascript(line: str, arg: str, timeout: float = 10) -> str:
     if r.returncode != 0:
         err = r.stderr.strip()
         if "JavaScript" in err or "-1743" in err or "javascript" in err.lower():
-            raise ChromeError("le navigateur refuse la lecture de la page : autorisez voxjev dans Réglages › "
-                              "Confidentialité › Automatisation (Safari : Développement › Autoriser le JavaScript "
-                              "depuis les événements Apple)")
+            raise ChromeError("le navigateur refuse la lecture de la page. "
+                              + HOW_TO_ALLOW.get(browser, "Autorisez voxjev dans Réglages › Confidentialité › Automatisation"))
         raise ChromeError(f"navigateur : {err[-160:] or 'aucune fenêtre ouverte'}")
     return r.stdout.strip()
 
@@ -281,10 +292,10 @@ def page_links(timeout: float = 20) -> tuple[str, str, list[Link]]:
             return _cdp_page_links()
         except ChromeError as cdp_error:
             try:
-                return _parse(_decode(_osascript(_CHROMIUM_AS[browser][0], LINKS_JS)))
+                return _parse(_decode(_osascript(_CHROMIUM_AS[browser][0], LINKS_JS, browser=browser)))
             except ChromeError:
                 raise cdp_error from None
-    return _parse(_decode(_osascript(_CHROMIUM_AS[browser][0], LINKS_JS, timeout=timeout)))
+    return _parse(_decode(_osascript(_CHROMIUM_AS[browser][0], LINKS_JS, timeout=timeout, browser=browser)))
 
 
 def _cdp_page_links() -> tuple[str, str, list[Link]]:
@@ -304,13 +315,13 @@ def navigate(url: str) -> None:
         raise ChromeError(f"adresse refusée : {url!r}")
     browser = target_browser()
     if browser != "Google Chrome":
-        _osascript(_CHROMIUM_AS[browser][1], url)
+        _osascript(_CHROMIUM_AS[browser][1], url, browser=browser)
         subprocess.run(["open", "-a", browser], check=False, timeout=5)
         return
     try:
         _cdp_navigate(url)
     except ChromeError:
-        _osascript(_CHROMIUM_AS[browser][1], url)
+        _osascript(_CHROMIUM_AS[browser][1], url, browser=browser)
 
 
 def _cdp_navigate(url: str) -> None:

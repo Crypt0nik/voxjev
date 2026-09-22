@@ -95,8 +95,27 @@ Le modèle Whisper (~1,5 Go) est téléchargé une seule fois.
 |---|---|
 | questions générales, brouillons rédigés, découpage avancé | `OPENROUTER_API_KEY` dans `.env` (~0,0002 $ par usage) |
 | lancer un titre précis sur Spotify | une app sur developer.spotify.com, puis *Réglages › Connexions* |
-| l'agent web et « clique sur le 2ᵉ lien » | Chrome › `chrome://inspect/#remote-debugging` › *Allow remote debugging* |
+| l'agent web | Chrome › `chrome://inspect/#remote-debugging` › *Allow remote debugging* |
+| « clique sur le 2ᵉ lien » | selon votre navigateur, voir [Navigateurs pris en charge](#navigateurs-pris-en-charge) |
 | Verr. Maj comme touche de parole | *Réglages › Avancé*, ou `./scripts/capslock.sh install` |
+
+## Navigateurs pris en charge
+
+« Clique sur le 2ᵉ lien », « ouvre le meilleur résultat » et « … puis ouvre le premier lien »
+agissent sur le navigateur au premier plan, sinon sur votre navigateur par défaut. Les recherches
+s'ouvrent dans un nouvel onglet de sa fenêtre principale.
+
+| Navigateur | Lecture de la page | Réglage à faire une fois |
+|---|---|---|
+| **Arc** | AppleScript | aucun (macOS demande d'autoriser voxjev à contrôler Arc) |
+| **Google Chrome** | protocole de débogage, sinon AppleScript | `chrome://inspect/#remote-debugging` › *Allow remote debugging*, puis *Allow* ; **ou** *Affichage › Options pour les développeurs › Autoriser JavaScript à partir des événements Apple* |
+| **Brave**, **Edge** | AppleScript | *Autoriser JavaScript à partir des événements Apple* (menu Affichage / Développeur) |
+| **Vivaldi** | AppleScript | autorisation d'automatisation macOS |
+| **Safari** | AppleScript | *Développement › Autoriser le JavaScript depuis les événements Apple* |
+| Firefox | non pris en charge (pas d'accès AppleScript aux pages) | — |
+
+Le script qui lit la page est figé et en lecture seule ; seuls des liens `http(s)` présents sur la
+page peuvent être ouverts, et les liens de compte, de connexion ou contenant un e-mail sont exclus.
 
 ## Réglages
 
