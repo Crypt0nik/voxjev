@@ -25,7 +25,7 @@ Confirmer = Callable[[Decision, ArgResult, list[Step]], bool]
 @dataclass
 class Outcome:
     transcript: str
-    status: str = "ignored"  # executed | dry_run | ignored | cancelled | error
+    status: str = "ignored"  # planned | executed | dry_run | ignored | cancelled | error
     result: JevResult | None = None
     decision: Decision | None = None
     args: ArgResult | None = None
@@ -63,6 +63,15 @@ class Launcher:
         return self._apps if self._apps is not None else installed_apps(self.config.settings.app_dirs)
 
     def handle(self, transcript: str) -> Outcome:
+        """Un énoncé simple : planifier, puis confirmer/exécuter."""
+        return self.finish(self.plan(transcript))
+
+    def plan(self, transcript: str, mode: str | None = None) -> Outcome:
+        """Contexte -> Jev -> décision -> arguments -> étapes. N'exécute rien.
+
+        Statut en sortie : ``planned`` (prêt), ``ignored`` ou ``error``. ``mode`` permet de
+        planifier une sous-étape d'une demande composée dans le mode qu'elle aura à l'exécution.
+        """
         out = Outcome(transcript=transcript)
         self.current = out
         transcript = transcript.strip()
@@ -70,9 +79,10 @@ class Launcher:
             out.error = "transcript vide"
             return out
         s = self.config.settings
+        mode = mode or self.session.mode
         t0 = time.perf_counter()
-        commands = self.config.commands_for_mode(self.session.mode)
-        state = build_state(transcript, self._frontmost(), self.apps, self.session.mode, self.session.last_command)
+        commands = self.config.commands_for_mode(mode)
+        state = build_state(transcript, self._frontmost(), self.apps, mode, self.session.last_command)
         out.timings["context_ms"] = (time.perf_counter() - t0) * 1000
 
         try:
@@ -97,7 +107,14 @@ class Launcher:
         except ActionError as exc:
             out.status, out.error = "error", str(exc)
             return out
+        out.status = "planned"
+        return out
 
+    def finish(self, out: Outcome) -> Outcome:
+        """Termine un énoncé planifié : dry-run, confirmation si nécessaire, exécution."""
+        self.current = out
+        if out.status != "planned":
+            return out
         if self.dry_run:
             out.status = "dry_run"
             return out
@@ -105,7 +122,11 @@ class Launcher:
             if not (self.confirmer and self.confirmer(out.decision, out.args, out.steps)):
                 out.status = "cancelled"
                 return out
+        return self.execute(out)
 
+    def execute(self, out: Outcome) -> Outcome:
+        """Exécute un énoncé planifié, sans confirmation (déjà obtenue par l'appelant)."""
+        cmd = out.decision.command
         t1 = time.perf_counter()
         try:
             assert self.executor is not None

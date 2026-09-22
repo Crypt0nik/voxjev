@@ -15,6 +15,8 @@
 #   set_mode   {mode}                      -> change le mode actif (+ on_enter du mode)
 #   sequence   {steps: [...]}              -> plusieurs actions à la suite
 #
+# `label` (optionnel) : libellé court affiché dans l'interface, avec les arguments (« Ouvrir {app} »).
+#
 # Placeholders `{nom}` : uniquement des arguments déclarés dans `args` de la commande.
 #   - type app  : nom résolu par fuzzy matching sur les apps installées (+ alias)
 #   - type text : texte libre du transcript, TOUJOURS encodé (URL) ou passé en argv
@@ -34,6 +36,12 @@ settings:
   stt_prompt: "Commandes vocales : ouvre Chrome, Burp, Ghostty, Notion, Spotify, CyberChef, GTFOBins, revshells, Exploit-DB, CVE, mode CTF."
   min_record_seconds: 0.3
   confirm_timeout_seconds: 10
+  # Demandes composées (« ouvre Spotify et mets du jazz ») : Jev détecte, un petit LLM découpe,
+  # chaque morceau repasse par le pipeline normal. Sans OPENROUTER_API_KEY : découpage par règles.
+  compound_threshold: 0.60
+  max_plan_steps: 6
+  step_delay_seconds: 0.8
+  split_model: inception/mercury-2.5
   sounds:
     success: /System/Library/Sounds/Glass.aiff
     failure: /System/Library/Sounds/Basso.aiff
@@ -119,6 +127,7 @@ common: [open_app, quit_app, web_search, youtube_search, open_website, volume_up
 commands:
   # ---------------------------------------------------------------- apps
   - id: open_app
+    label: "Ouvrir {app}"
     description: "Ouvrir, lancer ou afficher une application installée (sans autre action)"
     examples: ["ouvre Spotify", "lance Visual Studio Code", "démarre le terminal"]
     destructive: false
@@ -130,6 +139,7 @@ commands:
     action: {type: open_app, app: "{app}"}
 
   - id: quit_app
+    label: "Quitter {app}"
     description: "Quitter ou fermer complètement une application"
     examples: ["quitte Spotify", "ferme complètement Chrome", "ferme l'application Notion"]
     destructive: true
@@ -142,6 +152,7 @@ commands:
 
   # ---------------------------------------------------------------- web
   - id: web_search
+    label: "Rechercher « {query} » sur le web"
     description: "Faire une recherche sur le web (Google), éventuellement dans un navigateur précis"
     examples: ["cherche la météo à Lyon", "ouvre Chrome et cherche des recettes de crêpes", "recherche sur Google le prix du bitcoin"]
     destructive: false
@@ -160,6 +171,7 @@ commands:
     action: {type: open_url, url: "https://www.google.com/search?q={query}", app: "{browser}"}
 
   - id: youtube_search
+    label: "YouTube : « {query} »"
     description: "Chercher ou lancer une vidéo sur YouTube"
     examples: ["mets du lofi sur YouTube", "cherche un tuto Python sur YouTube", "YouTube vidéos de chats"]
     destructive: false
@@ -172,6 +184,7 @@ commands:
     action: {type: open_url, url: "https://www.youtube.com/results?search_query={query}"}
 
   - id: open_website
+    label: "Ouvrir {site}"
     description: "Ouvrir un site web connu (YouTube, GitHub, Gmail, ChatGPT, LinkedIn, Netflix)"
     examples: ["ouvre GitHub", "va sur Gmail", "affiche mes mails Gmail"]
     destructive: false
@@ -189,30 +202,35 @@ commands:
 
   # ---------------------------------------------------------------- son / musique
   - id: volume_up
+    label: "Monter le volume"
     description: "Monter le volume sonore de l'ordinateur"
     examples: ["monte le son", "plus fort", "augmente le volume"]
     destructive: false
     action: {type: applescript, script: "set volume output volume ((output volume of (get volume settings)) + 12)"}
 
   - id: volume_down
+    label: "Baisser le volume"
     description: "Baisser le volume sonore de l'ordinateur"
     examples: ["baisse le son", "moins fort", "diminue le volume"]
     destructive: false
     action: {type: applescript, script: "set volume output volume ((output volume of (get volume settings)) - 12)"}
 
   - id: toggle_mute
+    label: "Couper / remettre le son"
     description: "Couper ou remettre le son de l'ordinateur (muet)"
     examples: ["coupe le son", "mode muet", "remets le son"]
     destructive: false
     action: {type: applescript, script: "set volume output muted (not (output muted of (get volume settings)))"}
 
   - id: play_pause
+    label: "Lecture / pause"
     description: "Mettre en pause ou reprendre la musique (Spotify)"
     examples: ["pause", "mets la musique en pause", "relance la musique"]
     destructive: false
     action: {type: applescript, script: "tell application \"Spotify\" to playpause"}
 
   - id: next_track
+    label: "Morceau suivant"
     description: "Passer au morceau de musique suivant (Spotify)"
     examples: ["chanson suivante", "passe au morceau suivant", "next"]
     destructive: false
@@ -220,42 +238,49 @@ commands:
 
   # ---------------------------------------------------------------- système
   - id: screenshot
+    label: "Capture d'écran"
     description: "Faire une capture d'écran d'une zone de l'écran"
     examples: ["fais une capture d'écran", "screenshot", "capture l'écran"]
     destructive: false
     action: {type: keystroke, key: "4", modifiers: [command, shift]}
 
   - id: lock_screen
+    label: "Verrouiller l'écran"
     description: "Verrouiller l'écran de l'ordinateur"
     examples: ["verrouille l'écran", "verrouille l'ordi", "lock"]
     destructive: false
     action: {type: keystroke, key: "q", modifiers: [control, command]}
 
   - id: sleep_display
+    label: "Éteindre l'écran"
     description: "Éteindre l'écran / mettre l'écran en veille"
     examples: ["éteins l'écran", "mets l'écran en veille", "coupe l'écran"]
     destructive: false
     action: {type: exec, argv: [pmset, displaysleepnow]}
 
   - id: empty_trash
+    label: "Vider la corbeille"
     description: "Vider la corbeille (suppression définitive des fichiers)"
     examples: ["vide la corbeille", "vide la poubelle", "supprime tout ce qu'il y a dans la corbeille"]
     destructive: true
     action: {type: applescript, script: "tell application \"Finder\" to empty trash"}
 
   - id: close_window
+    label: "Fermer la fenêtre"
     description: "Fermer la fenêtre ou l'onglet actuellement au premier plan"
     examples: ["ferme cette fenêtre", "ferme l'onglet", "ferme ça"]
     destructive: false
     action: {type: keystroke, key: "w", modifiers: [command]}
 
   - id: new_tab
+    label: "Nouvel onglet"
     description: "Ouvrir un nouvel onglet dans l'application au premier plan"
     examples: ["nouvel onglet", "ouvre un nouvel onglet", "crée un onglet"]
     destructive: false
     action: {type: keystroke, key: "t", modifiers: [command]}
 
   - id: switch_mode
+    label: "Passer en mode {mode}"
     description: "Changer le mode de l'assistant (défaut, CTF, travail)"
     examples: ["passe en mode CTF", "mode travail", "reviens au mode normal"]
     destructive: false
@@ -269,6 +294,7 @@ commands:
 
   # ---------------------------------------------------------------- mode CTF
   - id: exploitdb_search
+    label: "Exploit-DB : « {query} »"
     description: "Chercher un exploit sur Exploit-DB"
     examples: ["cherche un exploit pour vsftpd", "exploit db apache struts", "trouve un exploit pour wordpress 5.0"]
     destructive: false
@@ -280,6 +306,7 @@ commands:
     action: {type: open_url, url: "https://www.exploit-db.com/search?q={query}"}
 
   - id: cve_search
+    label: "CVE : « {query} »"
     description: "Chercher une vulnérabilité CVE par identifiant ou par produit"
     examples: ["cherche la CVE 2021 44228", "cve log4j", "vulnérabilités connues de openssl"]
     destructive: false
@@ -294,6 +321,7 @@ commands:
     action: {type: open_url, url: "https://www.cve.org/CVERecord/SearchResults?query={query}"}
 
   - id: gtfobins_lookup
+    label: "GTFOBins : {binary}"
     description: "Ouvrir la page GTFOBins d'un binaire Unix (élévation de privilèges)"
     examples: ["gtfobins find", "ouvre gtfo bins pour vim", "comment escalader avec tar sur gtfobins"]
     destructive: false
@@ -307,18 +335,21 @@ commands:
     action: {type: open_url, url: "https://gtfobins.github.io/gtfobins/{binary}/"}
 
   - id: open_revshells
+    label: "Ouvrir revshells"
     description: "Ouvrir le générateur de reverse shell (revshells.com)"
     examples: ["ouvre revshells", "il me faut un reverse shell", "générateur de reverse shell"]
     destructive: false
     action: {type: open_url, url: "https://www.revshells.com/"}
 
   - id: open_cyberchef
+    label: "Ouvrir CyberChef"
     description: "Ouvrir CyberChef pour décoder ou transformer des données"
     examples: ["ouvre cyberchef", "il faut que je décode du base64", "lance cyber chef"]
     destructive: false
     action: {type: open_url, url: "https://gchq.github.io/CyberChef/"}
 
   - id: new_terminal_tab
+    label: "Nouveau terminal"
     description: "Ouvrir un nouvel onglet ou une nouvelle fenêtre de terminal"
     examples: ["nouveau terminal", "ouvre un nouvel onglet de terminal", "un autre shell"]
     destructive: false
@@ -329,12 +360,14 @@ commands:
 
   # ---------------------------------------------------------------- mode travail
   - id: new_email
+    label: "Nouvel e-mail"
     description: "Écrire un nouvel e-mail"
     examples: ["nouveau mail", "écris un e-mail", "rédige un nouveau message électronique"]
     destructive: false
     action: {type: open_url, url: "mailto:"}
 
   - id: github_search
+    label: "GitHub : « {query} »"
     description: "Chercher un dépôt ou du code sur GitHub"
     examples: ["cherche fastapi sur GitHub", "github recherche whisper mlx", "trouve un repo de parseur yaml sur GitHub"]
     destructive: false
@@ -347,6 +380,7 @@ commands:
     action: {type: open_url, url: "https://github.com/search?q={query}&type=repositories"}
 
   - id: new_note
+    label: "Nouvelle note"
     description: "Créer une nouvelle note dans Notes"
     examples: ["nouvelle note", "prends une note", "crée une note"]
     destructive: false

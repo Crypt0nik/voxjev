@@ -64,6 +64,14 @@ class Command:
     destructive: bool
     action: dict
     args: dict[str, ArgSpec] = field(default_factory=dict)
+    label: str = ""  # libellé court pour l'interface, ex. « Ouvrir {app} »
+
+    def short(self, values: dict[str, str] | None = None) -> str:
+        """Libellé lisible, arguments inclus : « Ouvrir Spotify »."""
+        if not self.label:
+            return self.description
+        values = values or {}
+        return re.sub(r"\{(\w+)\}", lambda m: values.get(m.group(1), "…"), self.label)
 
 
 @dataclass(frozen=True)
@@ -89,6 +97,10 @@ class Settings:
     stt_prompt: str = ""
     min_record_seconds: float = 0.3
     confirm_timeout_seconds: int = 10
+    compound_threshold: float = 0.60  # Noul « plusieurs actions » au-dessus duquel on découpe
+    max_plan_steps: int = 6
+    step_delay_seconds: float = 0.8  # pause après l'ouverture d'une app, avant l'étape suivante
+    split_model: str = "inception/mercury-2.5"  # LLM (OpenRouter) qui découpe les demandes composées
     sounds: dict[str, str] = field(default_factory=dict)
     app_dirs: tuple[str, ...] = ()
     exec_allowlist: tuple[str, ...] = ()
@@ -280,6 +292,7 @@ def load_config(path: str | Path | None = None) -> Config:
             destructive=c["destructive"],
             action=c["action"],
             args=args,
+            label=str(c.get("label", "")),
         )
 
     common = tuple(raw.get("common") or [])

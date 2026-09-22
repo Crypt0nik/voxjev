@@ -45,6 +45,15 @@ DESTRUCTIVE_CRITERIA = {
     "false": "The requested action only opens, shows, searches, plays or adjusts something reversibly",
 }
 
+COMPOUND_INSTRUCTIONS = (
+    "Does `transcript` ask the assistant to perform two or more distinct actions in sequence, "
+    "for example open an app and then search, play or like something?"
+)
+COMPOUND_CRITERIA = {
+    "true": "Several separate actions are requested, e.g. 'ouvre Spotify et mets du jazz', 'cherche X puis lance-la'",
+    "false": "A single action, even if it has details, e.g. 'cherche la météo à Lyon dans Chrome'",
+}
+
 
 class JevError(RuntimeError):
     pass
@@ -57,6 +66,7 @@ class JevResult:
     confidence: float
     addressed: float
     destructive: float
+    compound: float = 0.0  # probabilité que l'énoncé demande plusieurs actions
     latency_ms: float = 0.0
     model: str = ""
     input_tokens: int | None = None
@@ -92,6 +102,7 @@ def build_questions(commands: list[Command], none_option: dict) -> dict:
         "command": {"type": "choice", "instructions": COMMAND_INSTRUCTIONS, "criteria": criteria},
         "addressed": {"type": "noul", "instructions": ADDRESSED_INSTRUCTIONS, "criteria": ADDRESSED_CRITERIA},
         "destructive": {"type": "noul", "instructions": DESTRUCTIVE_INSTRUCTIONS, "criteria": DESTRUCTIVE_CRITERIA},
+        "compound": {"type": "noul", "instructions": COMPOUND_INSTRUCTIONS, "criteria": COMPOUND_CRITERIA},
     }
 
 
@@ -129,6 +140,7 @@ class JevClient:
             confidence=cmd.confidence,
             addressed=r.nouls["addressed"].noul,
             destructive=r.nouls["destructive"].noul,
+            compound=r.nouls["compound"].noul if "compound" in r.nouls else 0.0,
             latency_ms=latency,
             model=r.model,
             input_tokens=r.usage.input_tokens,
@@ -158,6 +170,9 @@ class FakeJevClient:
         transcript = state["transcript"]
         if transcript in self.responses:
             return self.responses[transcript]
+        from .multi import split_rules  # heuristique : plusieurs verbes d'action reliés
+
+        compound = 0.9 if len(split_rules(transcript)) > 1 else 0.05
         text = transcript.lower()
         scores = {
             c.id: max(fuzz.token_set_ratio(text, ex.lower()) for ex in c.examples) / 100
@@ -166,9 +181,9 @@ class FakeJevClient:
         best = max(scores, key=scores.get) if scores else NONE
         if not scores or scores[best] < 0.6:
             probs = {c.id: 0.0 for c in commands} | {NONE: 1.0}
-            return JevResult(NONE, probs, 1.0, addressed=0.2, destructive=0.05)
+            return JevResult(NONE, probs, 1.0, addressed=0.2, destructive=0.05, compound=compound)
         rest = (1 - scores[best]) / max(len(commands), 1)
         probs = {c.id: (scores[best] if c.id == best else rest) for c in commands} | {NONE: rest}
         chosen = next(c for c in commands if c.id == best)
         return JevResult(best, probs, scores[best], addressed=0.95,
-                         destructive=0.9 if chosen.destructive else 0.05)
+                         destructive=0.9 if chosen.destructive else 0.05, compound=compound)

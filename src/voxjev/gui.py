@@ -53,11 +53,12 @@ from Foundation import NSObject, NSString
 from PyObjCTools import AppHelper
 
 from .audio import PERMISSION_HELP, PushToTalk, accessibility_trusted, hotkey_label
-from .cli import format_outcome
+from .cli import format_any
 from .config import Config, load_config
 from .context import Session
 from .decide import explain, parse_yes_no
 from .executor import Sounds, SubprocessExecutor
+from .multi import MultiRunner, PlanOutcome, build_splitter
 from .pipeline import Launcher, Outcome
 
 # ----------------------------------------------------------------------------- constantes AppKit
@@ -314,7 +315,6 @@ class HUD:
         self.chip = make_pill(10.5)
         self.command = make_label(12.5, MEDIUM)
         self.detail = make_label(11.5, REGULAR, NSColor.secondaryLabelColor(), wrap=True)
-        self.detail.setMaximumNumberOfLines_(3)
         self.bars_title = make_label(10, SEMIBOLD, white(0.5))
         self.bars_title.setStringValue_("CE QUE JEV A COMPRIS")
         self.bars = BarsView.alloc().initWithFrame_(NSMakeRect(PAD, 0, W - 2 * PAD, 0))
@@ -367,6 +367,7 @@ class HUD:
                   self.bars, self.footer, self.hint, self.yes, self.no):
             v.setHidden_(True)
         self.bars.rows = []
+        self.detail.setMaximumNumberOfLines_(3)
 
     def _layout(self) -> None:
         inner = W - 2 * PAD
@@ -491,7 +492,7 @@ class HUD:
         cmd = out.decision.command if out.decision else None
         p = r.p_command if r else 0.0
         if cmd:
-            self.command.setStringValue_(cmd.description)
+            self.command.setStringValue_(cmd.short(out.args.values if out.args else None))
         elif out.decision:
             self.command.setStringValue_(explain(out.decision, p, dry_run))
         else:
@@ -554,10 +555,18 @@ class HUD:
     def ask_confirm(self, out: Outcome, s, timeout: int, hotkey: str) -> None:
         self._reset_content()
         self._fill_result(out, s)
+        self._ask(bool(out.decision and out.decision.destructive), timeout, hotkey)
+
+    def ask_confirm_plan(self, plan, s, timeout: int, hotkey: str) -> None:
+        self._reset_content()
+        self._fill_plan(plan)
+        self._ask(plan.destructive, timeout, hotkey)
+
+    def _ask(self, destructive: bool, timeout: int, hotkey: str) -> None:
         self._set_chip("confirm")
         self.dot.setTextColor_(ORANGE)
         self.status.setStringValue_(f"Confirmation requise — {timeout} s")
-        self._destructive = bool(out.decision and out.decision.destructive)
+        self._destructive = destructive
         self._yes_primed = False
         self.yes.set_title("Exécuter…" if self._destructive else "Exécuter")
         self.yes.set_color(GREEN.colorWithAlphaComponent_(0.92))
@@ -570,6 +579,49 @@ class HUD:
         self._armed_at = time.monotonic() + self.ARM_DELAY
         self._show()
         AppHelper.callLater(self.ARM_DELAY, self._arm, self._generation)
+
+    PLAN_MARKS = {"executed": "✓", "dry_run": "◌", "planned": "•", "ignored": "✗", "skipped": "–",
+                  "error": "✗", "cancelled": "–"}
+
+    def _fill_plan(self, plan) -> None:
+        self.transcript.setStringValue_(f"« {plan.transcript} »")
+        self.transcript.setHidden_(False)
+        n = len(plan.runnable)
+        self.command.setStringValue_(f"Plan en {n} étape{'s' if n > 1 else ''}")
+        self.command.setHidden_(False)
+        lines = []
+        for i, o in enumerate(plan.items, 1):
+            mark = self.PLAN_MARKS.get(o.status, "•")
+            cmd = o.decision.command if o.decision else None
+            if cmd and o.status != "ignored":
+                lines.append(f"{mark} {i}. {cmd.short(o.args.values if o.args else None)}")
+            else:
+                lines.append(f"{mark} {i}. « {o.transcript} » : pas une commande, ignoré")
+            if o.error:
+                lines.append(f"      Erreur : {o.error}")
+        if plan.error and not any(o.error for o in plan.items):
+            lines.append(f"Erreur : {plan.error}")
+        self.detail.setMaximumNumberOfLines_(10)
+        self.detail.setStringValue_("\n".join(lines))
+        self.detail.setHidden_(False)
+        t = plan.timings
+        parts = [f"Jev {t.get('jev_detect_ms', 0):.0f} ms", f"découpage ({plan.splitter}) {t.get('split_ms', 0):.0f} ms",
+                 f"plan {t.get('plan_ms', 0):.0f} ms"]
+        if "total_ms" in t:
+            parts.append(f"total {t['total_ms'] / 1000:.2f} s")
+        self.footer.setStringValue_("  ·  ".join(parts))
+        self.footer.setHidden_(False)
+
+    def show_plan(self, plan, s) -> None:
+        self._reset_content()
+        self._fill_plan(plan)
+        key = plan.status if plan.status in STATUS_STYLE else "ignored"
+        self._set_chip(key)
+        titles = {"executed": "Plan exécuté", "dry_run": "Simulation du plan (rien n'a été exécuté)",
+                  "ignored": "Ignoré", "cancelled": "Plan annulé", "error": "Plan non exécuté"}
+        self.dot.setTextColor_(PHASES[{"executed": "done", "error": "error"}.get(plan.status, "idle")][0])
+        self.status.setStringValue_(titles.get(plan.status, plan.status))
+        self._show(STATUS_STYLE[key][2] + 2)
 
     def confirm_countdown(self, left: int) -> None:
         if not self.hint.isHidden():
@@ -617,6 +669,8 @@ class Engine(threading.Thread):
             warm = None
         self.launcher = Launcher(self.config, self.client, self.session, executor=SubprocessExecutor(),
                                  confirmer=self._confirm, dry_run=self.dry_run)
+        self.runner = MultiRunner(self.launcher, build_splitter(s), confirm_plan=self._confirm_plan)
+        print(f"Demandes composées : découpage par {self.runner.splitter.kind}", flush=True)
         self.ui(self.app.set_icon, "idle")
         if warm is not None:
             print(f"Whisper prêt ({warm:.0f} ms)")
@@ -686,26 +740,39 @@ class Engine(threading.Thread):
         self.ui(hud.show_transcript, text)
         self.ui(hud.phase, "thinking", "Jev réfléchit…", 0, True)
         self.ui(self.app.set_icon, "thinking")
-        out = self.launcher.handle(text)
+        out = self.runner.handle(text)
         out.timings = {**timings, **out.timings, "total_ms": (time.perf_counter() - started) * 1000}
-        print(format_outcome(out, self.session.mode), flush=True)
+        print(format_any(out, self.session.mode), flush=True)
         if out.status != "dry_run":
             self.sounds.for_status(out.status)
-        self.ui(hud.show_outcome, out, self.config.settings)
+        if isinstance(out, PlanOutcome):
+            self.ui(hud.show_plan, out, self.config.settings)
+        else:
+            self.ui(hud.show_outcome, out, self.config.settings)
         self.ui(self.app.set_icon, "error" if out.status == "error" else "idle")
         self.ui(self.app.add_history, out)
         self.ui(self.app.refresh_mode)
 
     # ---------------------------------------------------------------- confirmation
     def _confirm(self, decision, args, steps) -> bool:
+        s = self.config.settings
+        preview = self.launcher.current or Outcome(transcript="", decision=decision, args=args, steps=steps)
+        print(f"  confirmation demandée ({decision.reason}) — {s.confirm_timeout_seconds} s", flush=True)
+        return self._await_answer(self.app.hud.ask_confirm, preview)
+
+    def _confirm_plan(self, plan: PlanOutcome) -> bool:
+        s = self.config.settings
+        print(f"  confirmation demandée pour un plan de {len(plan.runnable)} étape(s) — "
+              f"{s.confirm_timeout_seconds} s", flush=True)
+        return self._await_answer(self.app.hud.ask_confirm_plan, plan)
+
+    def _await_answer(self, show, subject) -> bool:
         """Bloque le thread moteur jusqu'à un clic, une réponse vocale ou l'expiration."""
         s = self.config.settings
         hud = self.app.hud
         while not self.answers.empty():
             self.answers.get_nowait()
-        preview = self.launcher.current or Outcome(transcript="", decision=decision, args=args, steps=steps)
-        print(f"  confirmation demandée ({decision.reason}) — {s.confirm_timeout_seconds} s", flush=True)
-        self.ui(hud.ask_confirm, preview, s, s.confirm_timeout_seconds, hotkey_label(s.hotkey))
+        self.ui(show, subject, s, s.confirm_timeout_seconds, hotkey_label(s.hotkey))
         self.ui(self.app.set_icon, "confirm")
         self.sounds.play("listening")
         deadline = time.monotonic() + s.confirm_timeout_seconds
@@ -859,7 +926,9 @@ class GuiApp:
         self.rebuild_menu()
 
     def show_last(self) -> None:
-        if self.last:
+        if isinstance(self.last, PlanOutcome):
+            self.hud.show_plan(self.last, self.engine.config.settings)
+        elif self.last:
             self.hud.show_outcome(self.last, self.engine.config.settings)
 
     def test_phrase(self) -> None:

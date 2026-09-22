@@ -7,7 +7,7 @@ import subprocess
 import sys
 import time
 
-from .cli import format_outcome
+from .cli import format_any
 from .config import Config
 from .context import Session, frontmost_app, installed_apps
 from .executor import Sounds, SubprocessExecutor, dialog_confirmer
@@ -37,6 +37,10 @@ def run_listener(config: Config, client, session: Session, *, dry_run: bool = Fa
     launcher = Launcher(config, client, session,
                         executor=None if dry_run else SubprocessExecutor(),
                         confirmer=dialog_confirmer(s.confirm_timeout_seconds), dry_run=dry_run)
+    from .executor import dialog_plan_confirmer
+    from .multi import MultiRunner, build_splitter
+
+    runner = MultiRunner(launcher, build_splitter(s), confirm_plan=dialog_plan_confirmer(s.confirm_timeout_seconds))
     ptt = PushToTalk(s.hotkey, on_start=lambda: sounds.play("listening"))
     ptt.start()
     print(f"Maintenez « {s.hotkey} » pour parler (Ctrl+C pour quitter)."
@@ -56,10 +60,10 @@ def run_listener(config: Config, client, session: Session, *, dry_run: bool = Fa
                 print(f"  (rien compris — {held:.1f} s d'audio)")
                 sounds.play("ignored")
                 continue
-            out = launcher.handle(text)
+            out = runner.handle(text)
             out.timings = {"audio_s": held, "stt_ms": stt_ms, **out.timings,
                            "total_ms": (time.perf_counter() - released) * 1000}
-            print(format_outcome(out, session.mode), flush=True)
+            print(format_any(out, session.mode), flush=True)
             if not dry_run:
                 sounds.for_status(out.status)
     except KeyboardInterrupt:

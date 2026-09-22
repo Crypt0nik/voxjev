@@ -151,7 +151,7 @@ def test_set_mode_runs_on_enter(config):
 # ------------------------------------------------------------------ pipeline (FakeJev)
 def test_questions_shape(config):
     q = build_questions(config.commands_for_mode("defaut"), config.settings.none_option)
-    assert set(q) == {"command", "addressed", "destructive"}
+    assert set(q) == {"command", "addressed", "destructive", "compound"}
     assert NONE in q["command"]["criteria"] and q["addressed"]["type"] == "noul"
 
 
@@ -261,3 +261,9 @@ def test_explain_is_human_readable(config):
     assert "aurait été exécuté" in explain(d, 0.95, dry_run=True)
     assert explain(decide(result("empty_trash", 1.0), config.commands, config.settings), 1.0).startswith("Action destructrice")
     assert explain(decide(result(NONE, 0.99), config.commands, config.settings), 0.99).startswith("Ce n'est pas une commande")
+
+
+def test_command_short_label(config):
+    assert config.commands["open_app"].short({"app": "Spotify"}) == "Ouvrir Spotify"
+    assert config.commands["volume_up"].short() == "Monter le volume"
+    assert all(c.label for c in config.commands.values())

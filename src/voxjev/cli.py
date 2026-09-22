@@ -48,6 +48,43 @@ def format_outcome(out: Outcome, mode: str) -> str:
     return "\n".join(lines)
 
 
+def format_plan(plan, mode: str) -> str:
+    """Affichage d'une demande composée (voxjev.multi.PlanOutcome)."""
+    lines = [f"« {plan.transcript} »  " + _c(f"[mode {mode}]", "90")
+             + f"  plan en {len(plan.parts)} étapes (découpage : {plan.splitter})"]
+    for i, (part, o) in enumerate(zip(plan.parts, plan.items), 1):
+        r = o.result
+        what = f"{o.command_id or (r.command if r else '?')}" + (f" p={r.p_command:.2f}" if r else "")
+        args = " ".join(f"{k}={v!r}" for k, v in o.args.values.items()) if o.args and o.args.values else ""
+        status = o.status + (f" : {o.error}" if o.error else "")
+        lines.append(f"  {i}. « {part} » → {_c(what, '1')} {args}  [{_c(status, _COLORS.get(o.status, '0'))}]")
+        for step in o.steps:
+            lines.append(f"       $ {step}")
+    timing = " ".join(f"{k}={v:.0f}" for k, v in plan.timings.items())
+    status = plan.status + (f" : {plan.error}" if plan.error else "")
+    lines.append(f"  → {_c(status, _COLORS.get(plan.status, '0'))}  ({timing})")
+    return "\n".join(lines)
+
+
+def format_any(out, mode: str) -> str:
+    from .multi import PlanOutcome
+
+    return format_plan(out, mode) if isinstance(out, PlanOutcome) else format_outcome(out, mode)
+
+
+def terminal_plan_confirmer(plan) -> bool:
+    print(f"  Plan en {len(plan.runnable)} étape(s) à exécuter :")
+    for o in plan.runnable:
+        print(f"    • {o.decision.command.short(o.args.values if o.args else None)}  ({o.decision.reason})")
+    for o in plan.dropped:
+        print(f"    ✗ ignoré : « {o.transcript} »")
+    try:
+        answer = input("  Exécuter ce plan ? [o/N] ")
+    except EOFError:
+        return False
+    return answer.strip().lower() in {"o", "oui", "y", "yes"}
+
+
 def terminal_confirmer(decision, args, steps) -> bool:
     what = decision.command.description if decision.command else "?"
     try:
@@ -135,9 +172,13 @@ def main(argv: list[str] | None = None) -> int:
 
             executor = SubprocessExecutor()
         confirmer = (lambda *a: True) if args.yes else terminal_confirmer
+        from .multi import MultiRunner, build_splitter
+
         launcher = Launcher(config, client, session, executor=executor, confirmer=confirmer, dry_run=args.dry_run)
-        out = launcher.handle(args.text)
-        print(format_outcome(out, session.mode))
+        runner = MultiRunner(launcher, build_splitter(config.settings),
+                             confirm_plan=(lambda plan: True) if args.yes else terminal_plan_confirmer)
+        out = runner.handle(args.text)
+        print(format_any(out, session.mode))
         if not args.dry_run:
             from .executor import Sounds
 

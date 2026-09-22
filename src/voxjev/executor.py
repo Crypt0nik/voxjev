@@ -55,6 +55,28 @@ _DIALOG = [
 ]
 
 
+def _ask_dialog(lines: list[str], timeout_s: int) -> bool:
+    argv = ["osascript"] + [x for line in _DIALOG for x in ("-e", line)] + ["\n".join(lines), str(timeout_s)]
+    try:
+        proc = subprocess.run(argv, capture_output=True, text=True, timeout=timeout_s + 5)
+    except subprocess.TimeoutExpired:
+        return False
+    return proc.returncode == 0 and proc.stdout.strip() == "Exécuter"
+
+
+def dialog_plan_confirmer(timeout_s: int = 10):
+    """Confirmation d'une demande composée (une seule boîte pour tout le plan)."""
+
+    def confirm(plan) -> bool:
+        lines = [f"Exécuter ces {len(plan.runnable)} étape(s) ?", ""]
+        lines += [f"{i}. {o.decision.command.short(o.args.values if o.args else None)}"
+                  for i, o in enumerate(plan.runnable, 1)]
+        lines += [f"✗ ignoré : « {o.transcript} »" for o in plan.dropped]
+        return _ask_dialog(lines, timeout_s)
+
+    return confirm
+
+
 def dialog_confirmer(timeout_s: int = 10):
     """Confirmation par boîte de dialogue macOS. Le texte est passé en argv (jamais interpolé)."""
 
