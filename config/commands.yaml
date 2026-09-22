@@ -310,7 +310,7 @@ commands:
   # ---------------------------------------------------------------- agent web
   - id: web_task
     label: "Agent web : « {goal} »"
-    description: "Réaliser une tâche en plusieurs étapes à l'intérieur d'un site web : remplir une recherche, choisir des filtres, trouver et ouvrir un résultat précis (vols, articles, produits, itinéraires)"
+    description: "Réaliser une tâche en plusieurs étapes à l'intérieur d'un site web : remplir un formulaire de recherche, choisir des filtres, comparer (vols, produits, itinéraires). Pas pour ouvrir simplement un lien ou un résultat de la page déjà affichée"
     examples: ["trouve-moi un vol Paris Lisbonne le 12 octobre", "ouvre l'article Wikipédia sur la relativité générale", "cherche un itinéraire à vélo de Lyon à Annecy sur Google Maps"]
     destructive: false
     always_confirm: false  # garde-fous dans l'agent : arrêt avant achat/paiement/envoi/suppression

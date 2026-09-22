@@ -244,8 +244,14 @@ class MultiRunner:
     # ---------------------------------------------------------------- planification
     def _plan_parts(self, parts: list[str]) -> list[Outcome]:
         mode = self.launcher.session.mode
-        with ThreadPoolExecutor(max_workers=len(parts)) as pool:
-            items = list(pool.map(lambda p: self.launcher.plan(p, mode=mode), parts))
+        # « …puis ouvre le premier résultat » : la page n'existe pas encore au moment du plan,
+        # le lien sera choisi à l'exécution, une fois la page chargée.
+        self.launcher.defer_page_links = True
+        try:
+            with ThreadPoolExecutor(max_workers=len(parts)) as pool:
+                items = list(pool.map(lambda p: self.launcher.plan(p, mode=mode), parts))
+        finally:
+            self.launcher.defer_page_links = False
         # Une étape qui change de mode : les suivantes sont replanifiées dans le nouveau mode.
         for i, item in enumerate(items):
             new_mode = next((st.mode for st in item.steps if st.kind == "set_mode"), None)

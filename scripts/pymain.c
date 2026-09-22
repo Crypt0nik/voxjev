@@ -1,4 +1,4 @@
-/* « voxjev » : Python embarqué, compilé avec le SDK macOS courant.
+/* « voxjev-gui » : Python embarqué, compilé avec le SDK macOS courant.
  *
  * macOS 26 n'active le design Liquid Glass (contrôles en verre, grands arrondis, barres de
  * défilement fines) que pour les exécutables liés à son SDK. Le binaire python3.12 fourni par uv

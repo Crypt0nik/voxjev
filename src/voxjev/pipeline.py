@@ -62,6 +62,7 @@ class Launcher:
         self.current: Outcome | None = None  # énoncé en cours (lu par les confirmateurs graphiques)
         self.provider = provider or Provider()
         self._warm_at = 0.0
+        self.defer_page_links = False  # demandes composées : lien choisi à l'exécution
         self._spec: dict = {}  # clé de requête -> (instant, future) : réponses anticipées
         self._pool = None
         if executor is not None:
@@ -240,6 +241,8 @@ class Launcher:
                 if p < s.threshold and out.decision.verdict == Verdict.EXECUTE:
                     out.decision = Decision(Verdict.CONFIRM, out.decision.command,
                                             f"fichier incertain (p={p:.2f})", code="medium_p")
+            elif step.kind == "page_link" and self.defer_page_links:
+                resolved.append(Step("page_link", (out.transcript,), label="Lien de la page (choisi après chargement)"))
             elif step.kind == "page_link":
                 from .chrome import ChromeError, page_links, pick
 

@@ -345,3 +345,14 @@ def test_page_link_ordinal_and_choice(config, monkeypatch):
     assert out.steps[0].argv == ("https://fr.wikipedia.org/wiki/Lisbonne",)
     with pytest.raises(chrome.ChromeError):
         chrome.navigate("javascript:alert(1)")
+
+
+def test_page_link_is_deferred_in_compound_plans(config):
+    from voxjev.multi import MultiRunner, Splitter
+
+    lz = launcher(config, {"cherche la météo": res("web_search"), "ouvre le premier résultat": res("page_link"),
+                           "cherche la météo puis ouvre le premier résultat": JevResult(
+                               "web_search", {"web_search": 0.9, NONE: 0.1}, 0.9, 0.95, 0.02, compound=0.95)})
+    plan = MultiRunner(lz, Splitter()).handle("cherche la météo puis ouvre le premier résultat")
+    step = plan.items[1].steps[0]
+    assert step.kind == "page_link" and step.argv == ("ouvre le premier résultat",)  # choisi à l'exécution

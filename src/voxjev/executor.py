@@ -242,11 +242,33 @@ class SubprocessExecutor:
             except ChromeError as exc:
                 raise ActionError(str(exc)) from exc
             return None
+        if k == "page_link" and step.argv:
+            return self._page_link(step.argv[0])
         if k in ("memory_ask", "file_open", "page_link"):
             raise ActionError("étape non résolue (voir Launcher)")
         if k != "run" or not step.argv:
             return None
         self._subprocess(step)
+        return None
+
+    def _page_link(self, transcript: str) -> None:
+        """Lien choisi une fois la page chargée (étape d'une demande composée)."""
+        from .chrome import ChromeError, navigate, page_links, pick
+
+        if self.client is None:
+            raise ActionError("client Jev indisponible")
+        deadline = time.monotonic() + 6.0
+        try:
+            while True:
+                title, url, links = page_links()
+                if any(link.result for link in links) or time.monotonic() > deadline:
+                    break
+                time.sleep(0.5)  # la page de résultats se charge encore
+            link, _, _ = pick(self.client, transcript, title, url, links, getattr(self.settings, "pick_min_p", 0.5))
+            self.progress(f"ouverture de « {link.text[:60]} » ({link.domain})")
+            navigate(link.href)
+        except ChromeError as exc:
+            raise ActionError(str(exc)) from exc
         return None
 
     def _subprocess(self, step: Step) -> None:

@@ -24,7 +24,7 @@ fi
 PYHOME="$(dirname "$(dirname "$(readlink -f "$PROJECT/.venv/bin/python")")")"
 PYVER="$("$PROJECT/.venv/bin/python" -c 'import sys; print(f"{sys.version_info[0]}.{sys.version_info[1]}")')"
 clang -O2 -Wall -I"$PYHOME/include/python$PYVER" "$PROJECT/scripts/pymain.c" -L"$PYHOME/lib" -lpython"$PYVER" \
-  -Wl,-rpath,"$PYHOME/lib" -o "$PROJECT/.venv/bin/voxjev"
+  -Wl,-rpath,"$PYHOME/lib" -o "$PROJECT/.venv/bin/voxjev-gui"
 
 # On construit dans un dossier temporaire et on ne remplace l'app QUE si elle change : une nouvelle
 # signature (ad hoc) fait oublier à macOS les autorisations déjà données (Micro, Accessibilité…).
