@@ -147,7 +147,30 @@ la différence (voir `cases.tsv`).
 | le découpage intelligent des demandes composées, et la saisie de texte de l'agent web | `OPENROUTER_API_KEY=...` dans `.env` (openrouter.ai › Keys ; crédits prépayés, ~0,0002 $ par usage) |
 | lancer une musique précise et liker sur Spotify | app sur developer.spotify.com (Redirect URI `http://127.0.0.1:8888/callback`), `SPOTIFY_CLIENT_ID=...` dans `.env`, puis `./voxjev --spotify-login` |
 | l'agent web | Chrome › `chrome://inspect/#remote-debugging` › cocher « Allow remote debugging », puis cliquer « Allow » à la première connexion. Vérifier avec `uv run browser-harness --doctor` |
-| le push-to-talk | Réglages › Confidentialité › Accessibilité + Surveillance de l'entrée pour votre terminal |
+| le push-to-talk | Réglages › Confidentialité › Accessibilité + Surveillance de l'entrée pour votre terminal (ou pour **voxjev**, si vous utilisez l'app ci-dessous) |
+| l'avoir toujours sous la main | `./scripts/install_app.sh --login` : crée `~/Applications/voxjev.app` (icône dans la barre des menus, sans Dock) et la lance à l'ouverture de session. Accordez **à voxjev** Micro, Accessibilité et Surveillance de l'entrée. Journal : `~/Library/Logs/voxjev/voxjev.log`. Désinstaller : `./scripts/install_app.sh --uninstall` |
+
+## « Annule ça » et journal
+
+Dites « annule ça » (ou « reviens en arrière ») pour défaire la **dernière action exécutée**. Chaque
+commande réversible déclare son inverse dans le YAML (`undo:`), avec les mêmes arguments :
+
+| Action | Annulation |
+|---|---|
+| ouvrir une app | la quitter (**toujours confirmé**) |
+| quitter une app | la rouvrir |
+| monter / baisser le volume, couper le son | l'inverse |
+| lecture/pause, morceau suivant, lancer un morceau Spotify | pause / morceau précédent |
+| nouvel onglet | le fermer (⌘W) |
+| changer de mode | revenir au mode précédent (`{previous_mode}`) |
+
+L'annulation est déterministe : elle rejoue une action de la liste blanche, validée au chargement
+de la config comme les autres. On ne peut annuler que la dernière action, une seule fois. Les
+actions irréversibles (capture d'écran, recherche, corbeille…) répondent « ne peut pas être annulé ».
+
+Chaque action exécutée est ajoutée au **journal local** `~/Library/Logs/voxjev/history.jsonl` (heure,
+phrase, commande, arguments, mode). Ce fichier ne quitte jamais la machine. Pour le déplacer,
+définissez `VOXJEV_JOURNAL=/autre/chemin.jsonl`.
 
 ## Interface graphique (`./voxjev --gui`)
 
@@ -271,7 +294,7 @@ et exemples des commandes). Le mode et la dernière commande ne sont que des ide
 dans votre config : ni contenu utilisateur, ni argument.
 
 **Rien d'autre ne part** : ni l'audio (Whisper tourne en local), ni les arguments extraits, ni les
-fichiers, ni l'historique. La clé est lue dans `TYPESAFE_API_KEY` (fichier `.env` non commité) et
+fichiers, ni l'historique, ni le journal local. La clé est lue dans `TYPESAFE_API_KEY` (fichier `.env` non commité) et
 n'est jamais écrite en dur ni loggée. D'après TypeSafe, Jev n'est pas entraîné sur les requêtes des
 clients.
 

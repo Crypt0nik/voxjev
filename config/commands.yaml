@@ -14,6 +14,7 @@
 #   exec       {argv}                      -> argv figé, argv[0] doit être dans settings.exec_allowlist
 #   set_mode   {mode}                      -> change le mode actif (+ on_enter du mode)
 #   sequence   {steps: [...]}              -> plusieurs actions à la suite
+#   undo       {}                          -> rejoue le `undo:` de la dernière commande exécutée
 #
 # `label` (optionnel) : libellé court affiché dans l'interface, avec les arguments (« Ouvrir {app} »).
 #
@@ -123,7 +124,7 @@ modes:
 # Commandes disponibles dans tous les modes.
 common: [open_app, quit_app, web_search, youtube_search, open_website, volume_up, volume_down,
          toggle_mute, play_pause, next_track, screenshot, lock_screen, sleep_display,
-         empty_trash, close_window, new_tab, switch_mode, spotify_play, spotify_like, spotify_search, web_task]
+         empty_trash, close_window, new_tab, switch_mode, spotify_play, spotify_like, spotify_search, web_task, undo_last]
 
 commands:
   # ---------------------------------------------------------------- apps
@@ -138,6 +139,7 @@ commands:
         patterns:
           - "(?:ouvr\\w*|lanc\\w*|démarr\\w*|affich\\w*|va sur|passe sur|bascule sur)\\s+(?:-?moi\\s+)?(?:l'application\\s+|l'appli\\s+|l'app\\s+|le\\s+|la\\s+|les\\s+|l')?(?P<app>.+)"
     action: {type: open_app, app: "{app}"}
+    undo: {type: quit_app, app: "{app}"}
 
   - id: quit_app
     label: "Quitter {app}"
@@ -150,6 +152,7 @@ commands:
         patterns:
           - "(?:quitt\\w*|ferm\\w*|tu\\w*|arrêt\\w*)\\s+(?:complètement\\s+)?(?:l'application\\s+|l'app\\s+|le\\s+|la\\s+|l')?(?P<app>.+)"
     action: {type: quit_app, app: "{app}"}
+    undo: {type: open_app, app: "{app}"}
 
   # ---------------------------------------------------------------- web
   - id: web_search
@@ -208,6 +211,7 @@ commands:
     examples: ["monte le son", "plus fort", "augmente le volume"]
     destructive: false
     action: {type: applescript, script: "set volume output volume ((output volume of (get volume settings)) + 12)"}
+    undo: {type: applescript, script: "set volume output volume ((output volume of (get volume settings)) - 12)"}
 
   - id: volume_down
     label: "Baisser le volume"
@@ -215,6 +219,7 @@ commands:
     examples: ["baisse le son", "moins fort", "diminue le volume"]
     destructive: false
     action: {type: applescript, script: "set volume output volume ((output volume of (get volume settings)) - 12)"}
+    undo: {type: applescript, script: "set volume output volume ((output volume of (get volume settings)) + 12)"}
 
   - id: toggle_mute
     label: "Couper / remettre le son"
@@ -222,6 +227,7 @@ commands:
     examples: ["coupe le son", "mode muet", "remets le son"]
     destructive: false
     action: {type: applescript, script: "set volume output muted (not (output muted of (get volume settings)))"}
+    undo: {type: applescript, script: "set volume output muted (not (output muted of (get volume settings)))"}
 
   - id: play_pause
     label: "Lecture / pause"
@@ -229,6 +235,7 @@ commands:
     examples: ["pause", "mets la musique en pause", "relance la musique"]
     destructive: false
     action: {type: applescript, script: "tell application \"Spotify\" to playpause"}
+    undo: {type: applescript, script: "tell application \"Spotify\" to playpause"}
 
   - id: next_track
     label: "Morceau suivant"
@@ -236,6 +243,15 @@ commands:
     examples: ["chanson suivante", "passe au morceau suivant", "next"]
     destructive: false
     action: {type: applescript, script: "tell application \"Spotify\" to next track"}
+    undo: {type: applescript, script: "tell application \"Spotify\" to previous track"}
+
+  # ---------------------------------------------------------------- annulation
+  - id: undo_last
+    label: "Annuler la dernière action"
+    description: "Annuler / défaire la dernière action que l'assistant vient d'exécuter"
+    examples: ["annule ça", "annule la dernière action", "reviens en arrière, je ne voulais pas ça"]
+    destructive: false
+    action: {type: undo}
 
   # ---------------------------------------------------------------- Spotify
   - id: spotify_play
@@ -249,6 +265,7 @@ commands:
         patterns:
           - "(?:mets|joue|lance|écoute|passe|fais écouter)\\w*\\s+(?:-?moi\\s+)?(?:la chanson |le morceau |le titre |le son |l'album |la playlist |un peu de |du |de la |de l'|des )?(?P<query>.+?)(?:\\s+(?:sur|dans|avec)\\s+spotify)?$"
     action: {type: spotify, op: play, query: "{query}"}
+    undo: {type: applescript, script: "tell application \"Spotify\" to pause"}
 
   - id: spotify_like
     label: "Spotify : liker le morceau en cours"
@@ -335,6 +352,7 @@ commands:
     examples: ["nouvel onglet", "ouvre un nouvel onglet", "crée un onglet"]
     destructive: false
     action: {type: keystroke, key: "t", modifiers: [command]}
+    undo: {type: keystroke, key: "w", modifiers: [command]}
 
   - id: switch_mode
     label: "Passer en mode {mode}"
@@ -348,6 +366,7 @@ commands:
           - "mode\\s+(?P<mode>.+)$"
           - "(?:passe|bascule|active)\\w*\\s+(?:en|au|le)\\s+(?P<mode>.+)$"
     action: {type: set_mode, mode: "{mode}"}
+    undo: {type: set_mode, mode: "{previous_mode}"}
 
   # ---------------------------------------------------------------- mode CTF
   - id: exploitdb_search

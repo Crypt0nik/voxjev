@@ -9,7 +9,7 @@ from typing import Callable, Protocol
 from .actions import ActionError, Step, plan_command
 from .args import ArgResult, extract_args
 from .config import Config
-from .context import Session, frontmost_app, installed_apps
+from .context import Session, frontmost_app, installed_apps, journal
 from .decide import Decision, Verdict, decide
 from .jev_client import DecisionClient, JevError, JevResult, build_state
 
@@ -118,12 +118,32 @@ class Launcher:
             out.status, out.error = "error", f"argument(s) manquant(s) pour {cmd.id} : {', '.join(out.args.missing)}"
             return out
         try:
-            out.steps = plan_command(cmd, out.args.values, self.config, self.apps)
+            if cmd.action.get("type") == "undo":
+                out.steps = self._plan_undo(out)
+            else:
+                out.steps = plan_command(cmd, out.args.values, self.config, self.apps)
         except ActionError as exc:
             out.status, out.error = "error", str(exc)
             return out
         out.status = "planned"
         return out
+
+    def _plan_undo(self, out: Outcome):
+        """« annule ça » : rejoue l'action inverse déclarée (`undo:`) de la dernière commande."""
+        from .actions import plan_action
+
+        last = self.config.commands.get(self.session.last_command or "")
+        if last is None:
+            raise ActionError("rien à annuler")
+        if not last.undo:
+            raise ActionError(f"« {last.short(self.session.last_args)} » ne peut pas être annulé")
+        values = dict(self.session.last_args) | {"previous_mode": self.session.previous_mode or self.config.default_mode}
+        steps = plan_action(last.undo, last, values, self.config, self.apps)
+        out.args.values["annule"] = last.short(self.session.last_args)
+        if last.destructive or last.undo.get("type") == "quit_app":  # fermer une app : toujours confirmer
+            out.decision = Decision(Verdict.CONFIRM, out.decision.command, "annulation = quitter une app",
+                                    destructive=True, code="destructive")
+        return steps
 
     def finish(self, out: Outcome) -> Outcome:
         """Termine un énoncé planifié : dry-run, confirmation si nécessaire, exécution."""
@@ -153,8 +173,14 @@ class Launcher:
             out.timings["action_ms"] = (time.perf_counter() - t1) * 1000
         for step in out.steps:
             if step.kind == "set_mode":
-                self.session.mode = step.mode
-        self.session.last_command = cmd.id
+                self.session.previous_mode, self.session.mode = self.session.mode, step.mode
+        if cmd.action.get("type") != "undo":
+            self.session.last_command = cmd.id
+            self.session.last_args = dict(out.args.values) if out.args else {}
+        else:
+            self.session.last_command = None  # une annulation ne s'annule pas
         self.session.save()
         out.status = "executed"
+        journal({"at": time.strftime("%Y-%m-%dT%H:%M:%S"), "transcript": out.transcript, "command": cmd.id,
+                 "args": out.args.values if out.args else {}, "mode": self.session.mode})
         return out

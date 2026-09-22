@@ -67,11 +67,39 @@ def accessibility_trusted() -> bool:
         return True  # impossible de vérifier : on laisse pynput essayer
 
 
-PERMISSION_HELP = """\
-⚠️  Le push-to-talk nécessite deux autorisations macOS pour votre app de terminal
-   (Terminal, Ghostty, iTerm, VS Code…) :
-   1. Réglages Système > Confidentialité et sécurité > Accessibilité      -> activer le terminal
-   2. Réglages Système > Confidentialité et sécurité > Surveillance de l'entrée -> activer le terminal
+def request_permissions() -> None:
+    """Déclenche les fenêtres système « Accessibilité » et « Surveillance de l'entrée »
+    (utilisé par voxjev.app au premier lancement ; sans effet si déjà accordées)."""
+    import ctypes
+
+    try:
+        import objc
+        from Foundation import NSBundle
+
+        bundle = NSBundle.bundleWithPath_("/System/Library/Frameworks/ApplicationServices.framework")
+        fns: dict = {}
+        objc.loadBundleFunctions(bundle, fns, [("AXIsProcessTrustedWithOptions", b"Z@")])
+        fns["AXIsProcessTrustedWithOptions"]({"AXTrustedCheckOptionPrompt": True})
+    except Exception as exc:
+        print(f"demande d'accessibilité impossible : {exc}")
+    try:
+        iokit = ctypes.cdll.LoadLibrary("/System/Library/Frameworks/IOKit.framework/IOKit")
+        iokit.IOHIDRequestAccess.restype = ctypes.c_bool
+        iokit.IOHIDRequestAccess(1)  # kIOHIDRequestTypeListenEvent : surveillance de l'entrée
+    except OSError as exc:
+        print(f"demande de surveillance de l'entrée impossible : {exc}")
+
+
+def _grantee() -> str:
+    """Qui doit recevoir les autorisations : voxjev.app, ou l'app de terminal qui lance voxjev."""
+    return "voxjev" if os.environ.get("VOXJEV_APP") else "le terminal"
+
+
+PERMISSION_HELP = f"""\
+⚠️  Le push-to-talk nécessite deux autorisations macOS pour {"voxjev.app" if _grantee() == "voxjev"
+    else "votre app de terminal (Terminal, Ghostty, iTerm, VS Code…)"} :
+   1. Réglages Système > Confidentialité et sécurité > Accessibilité      -> activer {_grantee()}
+   2. Réglages Système > Confidentialité et sécurité > Surveillance de l'entrée -> activer {_grantee()}
    Le micro sera demandé automatiquement au premier appui. Relancez ensuite voxjev.
    (En attendant : `./voxjev --text "..."` ou `./voxjev --audio fichier.wav` fonctionnent sans ces droits.)"""
 

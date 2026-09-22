@@ -26,6 +26,7 @@ ACTION_TYPES = {
     "sequence",
     "spotify",
     "web_task",
+    "undo",
 }
 SPOTIFY_OPS = {"play", "like", "search"}
 ARG_TYPES = {"app", "text", "enum", "mode"}
@@ -72,6 +73,7 @@ class Command:
     args: dict[str, ArgSpec] = field(default_factory=dict)
     label: str = ""  # libellé court pour l'interface, ex. « Ouvrir {app} »
     always_confirm: bool = False  # confirmation systématique (ex. agent web sur votre profil Chrome)
+    undo: dict | None = None  # action inverse, pour « annule ça » (mêmes arguments + {previous_mode})
 
     def short(self, values: dict[str, str] | None = None) -> str:
         """Libellé lisible, arguments inclus : « Ouvrir Spotify »."""
@@ -307,6 +309,11 @@ def load_config(path: str | Path | None = None) -> Config:
             raise ConfigError(f"{where}: 'destructive' doit être true/false")
         args = _parse_args(c.get("args"), where)
         _validate_action(c.get("action") or {}, where, args, settings, mode_names)
+        if c.get("undo"):
+            if c["undo"].get("type") in ("undo", "web_task", "sequence"):
+                raise ConfigError(f"{where}.undo : type d'action non autorisé pour une annulation")
+            undo_args = dict(args) | {"previous_mode": ArgSpec("previous_mode", "mode")}
+            _validate_action(c["undo"], f"{where}.undo", undo_args, settings, mode_names)
         commands[cid] = Command(
             id=cid,
             description=c["description"],
@@ -316,6 +323,7 @@ def load_config(path: str | Path | None = None) -> Config:
             args=args,
             label=str(c.get("label", "")),
             always_confirm=bool(c.get("always_confirm", False)),
+            undo=c.get("undo"),
         )
 
     common = tuple(raw.get("common") or [])

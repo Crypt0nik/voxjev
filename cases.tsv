@@ -132,3 +132,7 @@ tu viens manger avec nous	none
 c'est quoi la capitale du Pérou	none
 euh attends je réfléchis	none
 Marc ouvre la porte s'il te plaît	none
+annule ça	undo_last
+annule la dernière action	undo_last
+reviens en arrière je voulais pas ça	undo_last
+j'ai annulé mon rendez-vous chez le dentiste	none

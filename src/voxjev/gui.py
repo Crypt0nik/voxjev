@@ -52,7 +52,7 @@ from AppKit import (
 from Foundation import NSObject, NSString
 from PyObjCTools import AppHelper
 
-from .audio import PERMISSION_HELP, PushToTalk, accessibility_trusted, hotkey_label
+from .audio import PERMISSION_HELP, PushToTalk, accessibility_trusted, hotkey_label, request_permissions
 from .cli import format_any
 from .config import Config, load_config
 from .context import Session
@@ -104,7 +104,7 @@ PHASES = {  # phase -> (couleur du point, symbole SF de la barre des menus)
     "error": (RED, "exclamationmark.triangle"),
 }
 PERMISSION_TEXT = (
-    "Autorisez votre terminal dans Réglages › Confidentialité et sécurité › Accessibilité "
+    ("Autorisez « voxjev »" if os.environ.get("VOXJEV_APP") else "Autorisez votre terminal") + " dans Réglages › Confidentialité et sécurité › Accessibilité "
     "et › Surveillance de l'entrée, puis relancez. En attendant : menu › Tester une phrase…"
 )
 
@@ -967,6 +967,8 @@ class GuiApp:
             self.ptt.start()
         else:
             print(PERMISSION_HELP)
+            if os.environ.get("VOXJEV_APP"):  # voxjev.app : fenêtres système de demande
+                request_permissions()
         if initial_text:
             self.engine.jobs.put(("text", initial_text))
 

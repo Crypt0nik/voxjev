@@ -143,6 +143,9 @@ def plan_action(action: dict, command: Command | None, values: dict[str, str], c
             raise ActionError(f"URL de départ refusée : {url!r}")
         return [Step("web", (goal, url), label=f"Agent web : « {goal[:60]} »")]
 
+    if kind == "undo":
+        raise ActionError("l'annulation se planifie dans le pipeline (voir Launcher.plan)")
+
     if kind == "shortcut":
         return [Step("run", ("shortcuts", "run", action["name"]), label=f"raccourci {action['name']}")]
 

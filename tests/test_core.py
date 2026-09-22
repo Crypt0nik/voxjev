@@ -293,3 +293,55 @@ def test_web_task_plan(config):
     assert out.decision.verdict == Verdict.CONFIRM  # toujours confirmé
     (step,) = out.steps
     assert step.kind == "web" and step.argv[1].startswith("https://www.google.com/travel/flights")
+
+
+# ------------------------------------------------------------------ annulation + journal
+def test_undo_open_app_quits_it_after_confirmation(config, tmp_path):
+    ex = RecordingExecutor()
+    asked = []
+    launcher = make_launcher(config, {"ouvre spotify": result("open_app"), "annule ça": result("undo_last")},
+                             executor=ex, confirmer=lambda *a: asked.append(a) or True, tmp_path=tmp_path)
+    assert launcher.handle("ouvre spotify").status == "executed"
+    out = launcher.handle("annule ça")
+    assert out.status == "executed" and asked  # quitter une app : toujours confirmé
+    assert out.steps[0].argv[-1].endswith('"Spotify" to quit') or "Spotify" in " ".join(out.steps[0].argv)
+    assert launcher.session.last_command is None  # une annulation ne s'annule pas
+    assert launcher.handle("annule ça").status == "error"
+
+
+def test_undo_mode_switch_returns_to_previous(config, tmp_path):
+    ex = RecordingExecutor()
+    launcher = make_launcher(config, {"passe en mode ctf": result("switch_mode"), "annule ça": result("undo_last")},
+                             executor=ex, tmp_path=tmp_path)
+    launcher.handle("passe en mode ctf")
+    assert launcher.session.mode == "ctf" and launcher.session.previous_mode == "defaut"
+    launcher.handle("annule ça")
+    assert launcher.session.mode == "defaut"
+
+
+def test_undo_refused_for_irreversible(config, tmp_path):
+    launcher = make_launcher(config, {"fais une capture": result("screenshot"), "annule ça": result("undo_last")},
+                             executor=RecordingExecutor(), tmp_path=tmp_path)
+    launcher.handle("fais une capture")
+    out = launcher.handle("annule ça")
+    assert out.status == "error" and "ne peut pas être annulé" in out.error
+
+
+def test_journal_records_executed_actions(config, tmp_path):
+    import json
+
+    import voxjev.context as ctx
+
+    launcher = make_launcher(config, {"ouvre chrome": result("open_app")}, executor=RecordingExecutor(),
+                             tmp_path=tmp_path)
+    launcher.handle("ouvre chrome")
+    entry = json.loads(ctx.JOURNAL.read_text().splitlines()[-1])
+    assert entry["command"] == "open_app" and entry["args"]["app"] == "Google Chrome"
+
+
+def test_config_rejects_unsafe_undo(tmp_path):
+    ok = BASE + "    action: {type: open_app, app: Safari}\n"
+    load_config(_write(tmp_path, ok + "    undo: {type: quit_app, app: Safari}\n"))
+    for undo in ("{type: exec, argv: [rm, -rf, /]}", "{type: undo}", "{type: shell, cmd: ls}"):
+        with pytest.raises(ConfigError):
+            load_config(_write(tmp_path, ok + f"    undo: {undo}\n"))
