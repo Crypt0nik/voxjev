@@ -204,8 +204,9 @@ recherche, le volume, la musique, les infos, l'agenda, les rappels, les notes…
 confirmation pour les actions sans risque* pour le couper (le choix est mémorisé).
 
 Restent **toujours** confirmés : les actions destructives (config ou Noul), quitter une app,
-fermer une fenêtre, la saisie de texte, les mails, les Raccourcis et menus inconnus, les agents
-web et bureau. Et les planchers restent : une phrase trop incertaine ou non adressée est ignorée.
+fermer une fenêtre, la saisie de texte, les mails, les Raccourcis et menus, l'agent bureau.
+L'agent web part directement : il s'arrête de lui-même avant tout achat, paiement, réservation,
+envoi ou suppression, et ne saisit jamais d'informations personnelles. Et les planchers restent : une phrase trop incertaine ou non adressée est ignorée.
 
 ## Mains libres et réponse anticipée
 

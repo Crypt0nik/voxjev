@@ -135,7 +135,7 @@ def test_quiet_mode_skips_confirmation_for_safe_commands_only(config):
     # destructif, toujours confirmé, ou hors liste : confirmation maintenue
     assert decide(result("empty_trash", 1.0), cmds, s).verdict == Verdict.CONFIRM
     assert decide(result("open_app", 1.0, destructive=0.8), cmds, s).verdict == Verdict.CONFIRM
-    assert decide(result("web_task", 1.0), cmds, s).verdict == Verdict.CONFIRM
+    assert decide(result("desktop_task", 1.0), cmds, s).verdict == Verdict.CONFIRM
     assert decide(result("quit_app", 0.6), cmds, s).verdict == Verdict.CONFIRM
     assert decide(result("type_text", 0.6), cmds, s).verdict == Verdict.CONFIRM
 
@@ -314,7 +314,7 @@ def test_web_agent_guard_blocks_risky_labels():
 def test_web_task_plan(config):
     launcher = make_launcher(config, {"trouve un vol Paris Lisbonne": result("web_task")})
     out = launcher.handle("trouve un vol Paris Lisbonne")
-    assert out.decision.verdict == Verdict.CONFIRM  # toujours confirmé
+    assert out.decision.verdict == Verdict.EXECUTE  # sans confirmation : l'agent a ses propres garde-fous
     (step,) = out.steps
     assert step.kind == "web" and step.argv[1].startswith("https://www.google.com/travel/flights")
 
