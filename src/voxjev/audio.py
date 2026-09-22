@@ -39,6 +39,15 @@ class Recorder:
         if self._on_level:
             self._on_level(float(np.sqrt(np.mean(chunk**2))))
 
+    def snapshot(self) -> np.ndarray:
+        """Audio capté jusqu'ici, sans arrêter l'enregistrement (transcription anticipée)."""
+        chunks = list(self._chunks)
+        return np.concatenate(chunks) if chunks else np.zeros(0, dtype=np.float32)
+
+    @property
+    def recording(self) -> bool:
+        return self._stream is not None
+
     def stop(self) -> np.ndarray:
         with self._lock:
             if self._stream is not None:
@@ -105,7 +114,8 @@ PERMISSION_HELP = f"""\
 
 
 HOTKEY_LABELS = {"alt_r": "⌥ droite", "alt_l": "⌥ gauche", "alt": "⌥", "cmd_r": "⌘ droite", "cmd": "⌘",
-                 "ctrl_r": "⌃ droite", "ctrl": "⌃", "shift_r": "⇧ droite", "caps_lock": "⇪"}
+                 "ctrl_r": "⌃ droite", "ctrl": "⌃", "shift_r": "⇧ droite", "caps_lock": "⇪",
+                 "f18": "Verr. Maj (F18)"}
 
 
 def hotkey_label(name: str) -> str:
@@ -171,3 +181,107 @@ class PushToTalk:
 
     def stop(self) -> None:
         self._listener.stop()
+
+
+# ----------------------------------------------------------------------------- mains libres
+SPEAKING_UNTIL = [0.0]  # mis à jour par executor.speak : on n'écoute pas sa propre voix
+
+
+class HandsFree:
+    """Micro ouvert en continu, découpage en phrases par l'énergie (VAD simple, local).
+
+    Chaque phrase détectée est passée à ``on_clip(audio, durée)``. C'est l'appelant qui
+    transcrit localement et ne garde que les phrases adressées (mot d'éveil ou fenêtre de suite) :
+    rien ne part vers l'API sans le mot d'éveil.
+    """
+
+    BLOCK = 512  # 32 ms à 16 kHz
+    PRE_ROLL_S = 0.35
+    END_SILENCE_S = 0.75
+    MAX_S = 15.0
+    MIN_VOICED_S = 0.3  # durée de voix minimale (un clic ou une toux ne suffit pas)
+
+    def __init__(self, on_clip, on_level=None, on_speech=None):
+        import sounddevice as sd
+
+        self._sd = sd
+        self._on_clip = on_clip
+        self._on_level = on_level
+        self._on_speech = on_speech  # début de phrase détecté (pour l'icône)
+        self._stream = None
+        self.paused = False
+        self._floor = 0.004
+        self._reset()
+
+    def _reset(self) -> None:
+        self._pre: list[np.ndarray] = []
+        self._speech: list[np.ndarray] = []
+        self._in_speech = False
+        self._silent_blocks = 0
+        self._loud_blocks = 0
+        self._voiced = 0
+
+    def start(self) -> None:
+        self._stream = self._sd.InputStream(samplerate=SAMPLE_RATE, channels=1, dtype="float32",
+                                            blocksize=self.BLOCK, callback=self._callback)
+        self._stream.start()
+
+    def stop(self) -> None:
+        if self._stream is not None:
+            self._stream.stop()
+            self._stream.close()
+            self._stream = None
+        self._reset()
+
+    @property
+    def running(self) -> bool:
+        return self._stream is not None
+
+    def _callback(self, indata, frames, time_info, status) -> None:
+        chunk = indata[:, 0].copy()
+        if self.paused or time.time() < SPEAKING_UNTIL[0]:
+            self._reset()
+            return
+        rms = float(np.sqrt(np.mean(chunk**2)))
+        threshold = max(0.012, self._floor * 3.0)
+        loud = rms > threshold
+        if not self._in_speech:
+            # plancher de bruit : moyenne lente des blocs calmes
+            if not loud:
+                self._floor = 0.98 * self._floor + 0.02 * rms
+            self._pre.append(chunk)
+            max_pre = int(self.PRE_ROLL_S * SAMPLE_RATE / self.BLOCK)
+            self._pre = self._pre[-max_pre:]
+            self._loud_blocks = self._loud_blocks + 1 if loud else 0
+            if self._loud_blocks >= 3:  # ~100 ms de voix : début de phrase
+                self._in_speech = True
+                self._speech = list(self._pre)
+                self._silent_blocks = 0
+                self._voiced = self._loud_blocks
+                if self._on_speech:
+                    self._on_speech()
+            return
+        self._speech.append(chunk)
+        if self._on_level:
+            self._on_level(rms)
+        self._silent_blocks = 0 if loud else self._silent_blocks + 1
+        self._voiced += 1 if loud else 0
+        length = len(self._speech) * self.BLOCK / SAMPLE_RATE
+        if self._silent_blocks * self.BLOCK / SAMPLE_RATE >= self.END_SILENCE_S or length >= self.MAX_S:
+            audio = np.concatenate(self._speech)
+            voiced = self._voiced * self.BLOCK / SAMPLE_RATE
+            self._reset()
+            if voiced >= self.MIN_VOICED_S:
+                self._on_clip(audio, length)
+
+
+def strip_wake_word(text: str, wake_words: tuple[str, ...]) -> tuple[bool, str]:
+    """(mot d'éveil présent en tête de phrase ?, reste de la phrase)."""
+    import re
+
+    low = text.lower().replace("’", "'")
+    for w in wake_words:
+        m = re.match(rf"^\W*(?:(?:ok|hey|hé|eh|dis|salut|bonjour)\W+)?{re.escape(w.lower())}\b\W*", low)
+        if m:
+            return True, text[m.end():].strip()
+    return False, text

@@ -19,9 +19,14 @@ if [[ "${1:-}" == "--uninstall" ]]; then
 fi
 
 [[ -x "$PROJECT/.venv/bin/python" ]] || { echo "Lancez d'abord : uv sync"; exit 1; }
-mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
-clang -O2 -Wall -DPROJECT_DIR="\"$PROJECT\"" -o "$APP/Contents/MacOS/voxjev" "$PROJECT/scripts/launcher.c"
-cat > "$APP/Contents/Info.plist" <<PLIST
+# On construit dans un dossier temporaire et on ne remplace l'app QUE si elle change : une nouvelle
+# signature (ad hoc) fait oublier à macOS les autorisations déjà données (Micro, Accessibilité…).
+# Le code Python n'est pas dans l'app (elle lance le projet) : une mise à jour du code ne la touche pas.
+BUILD="$(mktemp -d)/voxjev.app"
+trap 'rm -rf "$(dirname "$BUILD")"' EXIT
+mkdir -p "$BUILD/Contents/MacOS" "$BUILD/Contents/Resources"
+clang -O2 -Wall -DPROJECT_DIR="\"$PROJECT\"" -o "$BUILD/Contents/MacOS/voxjev" "$PROJECT/scripts/launcher.c"
+cat > "$BUILD/Contents/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0"><dict>
@@ -33,12 +38,25 @@ cat > "$APP/Contents/Info.plist" <<PLIST
   <key>CFBundleShortVersionString</key><string>0.2</string>
   <key>LSUIElement</key><true/>
   <key>LSMinimumSystemVersion</key><string>13.0</string>
-  <key>NSMicrophoneUsageDescription</key><string>voxjev écoute votre voix uniquement pendant l'appui sur la touche, et transcrit en local.</string>
+  <key>NSMicrophoneUsageDescription</key><string>voxjev écoute votre voix pendant l'appui sur la touche (ou en continu en mode mains libres) et transcrit en local.</string>
   <key>NSAppleEventsUsageDescription</key><string>voxjev pilote les apps que vous lui demandez (Spotify, Finder, Notes…).</string>
+  <key>NSCalendarsFullAccessUsageDescription</key><string>voxjev lit votre agenda quand vous demandez « qu'est-ce que j'ai demain ? » (lecture locale).</string>
+  <key>NSCalendarsUsageDescription</key><string>voxjev lit votre agenda quand vous le demandez (lecture locale).</string>
+  <key>NSRemindersFullAccessUsageDescription</key><string>voxjev crée les rappels que vous dictez.</string>
+  <key>NSContactsUsageDescription</key><string>voxjev retrouve l'adresse d'un contact pour préparer un brouillon d'e-mail.</string>
 </dict></plist>
 PLIST
-codesign --force --deep --sign - "$APP" >/dev/null 2>&1
-echo "App construite : $APP"
+STAMP="$(cat "$BUILD/Contents/MacOS/voxjev" "$BUILD/Contents/Info.plist" | shasum -a 256 | cut -d' ' -f1)"
+if [[ -f "$APP/Contents/Resources/build.sha256" && "$(cat "$APP/Contents/Resources/build.sha256")" == "$STAMP" ]]; then
+  echo "App déjà à jour : $APP (autorisations conservées)"
+else
+  echo "$STAMP" > "$BUILD/Contents/Resources/build.sha256"
+  rm -rf "$APP" && mkdir -p "$(dirname "$APP")" && cp -R "$BUILD" "$APP"
+  codesign --force --deep --sign - "$APP" >/dev/null 2>&1
+  echo "App construite : $APP"
+  echo "⚠️  Nouvelle signature : si voxjev était déjà autorisée, réactivez-la dans Réglages › Confidentialité"
+  echo "   (Accessibilité, Surveillance de l'entrée ; retirez l'ancienne entrée avec « − » si besoin)."
+fi
 
 if [[ "${1:-}" == "--login" ]]; then
   remove_login_item || true

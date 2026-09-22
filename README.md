@@ -5,15 +5,20 @@ Maintenez une touche, parlez, relâchez : la phrase est transcrite **localement*
 configuration elle vise, et du code déterministe exécute, demande confirmation ou ignore.
 
 ```
-Option droite maintenue ─► micro 16 kHz ─► mlx-whisper (local, ~1,2 s)
-        ─► Jev : 1 requête, 3 questions (~0,3–0,8 s)
-             • Choice   : quelle commande de la config ? (+ « none »)
-             • Noul     : l'énoncé m'est-il adressé ?
-             • Noul     : l'action est-elle destructrice ?
+Option droite maintenue ─► micro 16 kHz ─► mlx-whisper (local, ~1,2 s ; anticipé pendant qu'on parle)
+   (à l'appui : lecture des menus de l'app + connexion Jev chauffée)
+        ─► Jev : 1 requête, questions évaluées en parallèle (~0,3 s)
+             • Choice : quelle commande de la config ? (+ « none »)
+             • Noul   : l'énoncé m'est-il adressé ?      • Noul : destructeur ?     • Noul : plusieurs actions ?
+             • Choice : quel élément de menu / quel Raccourci / quel segment de la phrase ? (+ « none »)
         ─► décision en code : exécuter / confirmer / ignorer
-        ─► arguments extraits en code (regex + fuzzy matching) ─► liste blanche d'actions
-        ─► son de validation / d'échec + log des probabilités et latences
+        ─► arguments extraits en code (regex, dates, candidats choisis par Jev) ─► liste blanche d'actions
+        ─► son + HUD + réponse lue à voix haute (agenda, heure, question…)
 ```
+
+Jev ne génère jamais rien : il **choisit** (une commande, un élément de menu qui existe, un
+Raccourci qui existe, un segment de votre phrase, un fichier trouvé par Spotlight). Le code
+exécute.
 
 ## Installation
 
@@ -140,6 +145,72 @@ taper. voxjev le pilote **pas à pas** et ajoute ses garde-fous :
 Une simple recherche (« cherche la météo à Lyon ») reste une recherche Google directe. Jev fait
 la différence (voir `cases.tsv`).
 
+## Au quotidien : ce que vous pouvez dire
+
+| Domaine | Exemples | Comment |
+|---|---|---|
+| **N'importe quelle app** | « exporte en PDF », « nouvelle fenêtre privée », « affiche la barre latérale » | les menus de l'app au premier plan sont lus via l'accessibilité ; Jev choisit l'élément, le code clique (idée : *dwim*) |
+| **Vos Raccourcis** | « lance le raccourci créer un code QR » | `shortcuts list` ; Jev choisit parmi vos Raccourcis réels |
+| **Saisie** | « tape bonjour tout le monde », « écris ok pour moi et envoie » (confirmé) | frappe clavier ; **refusée dans les terminaux** |
+| **Clavier** | « copie », « colle », « recharge la page », « rouvre l'onglet fermé », « descends », « tout en haut » | raccourcis figés dans la config |
+| **Système** | « mode sombre », « plus de lumière », « coupe le wifi » | AppleScript figé, `networksetup` |
+| **Minuteurs** | « minuteur 10 minutes pour les pâtes », « combien de temps reste-t-il » | notification + voix à la fin (tant que voxjev tourne) |
+| **Rappels** | « rappelle-moi d'appeler Paul demain à 18h » | app Rappels ; date calculée par le code (`when.py`) |
+| **Agenda** | « ajoute un rendez-vous chez le dentiste mardi à 14h30 », « qu'est-ce que j'ai demain ? » | Calendrier (création) ; lecture locale via EventKit |
+| **Notes** | « note que je dois acheter des piles » | app Notes |
+| **Mails** | « écris un mail à Paul pour lui dire que je serai en retard » ; « quels mails demandent une action ? » | brouillon **jamais envoyé** (rédigé par le LLM si la clé OpenRouter est là) ; tri des non-lus par Jev (2 Nouls par mail, un seul appel) |
+| **Fichiers** | « ouvre le fichier rapport de stage », « montre mon CV dans le Finder » | Spotlight trouve jusqu'à 40 candidats, Jev choisit |
+| **Mémoire** | « retiens que mon dentiste c'est le Dr Martin », « c'est qui mon dentiste déjà ? », « oublie… » | fichier local ; Jev retrouve le bon souvenir |
+| **Questions** | « dis-moi c'est quoi une injection SQL », « combien font 17 fois 23 » | réponse courte d'un LLM (OpenRouter), affichée et lue |
+| **Infos** | « quelle heure est-il », « on est quel jour », « il reste combien de batterie » | local |
+| **Routines** | « lance ma routine du matin », « mode concentration » | section `routines:` du YAML : plusieurs commandes aux arguments figés |
+| **Agent bureau** | « dans cette fenêtre coche la case ne plus demander et valide » | voir plus bas ; toujours confirmé |
+
+**« Sélectionner plutôt que générer »** (idée de *jev-voice*) : quand les regex d'une commande
+n'extraient pas le texte (requête, titre…), Jev choisit le bon segment parmi ceux de la phrase,
+dans le même appel. Le texte utilisé vient donc toujours de ce que vous avez dit.
+
+### Routines
+
+```yaml
+routines:
+  - id: routine_matin
+    description: "Lancer la routine du matin"
+    examples: ["lance ma routine du matin", "on commence la journée"]
+    steps:
+      - {run: info, with: {what: date}}
+      - {run: agenda_read, with: {when: "aujourd'hui"}}
+      - {run: open_app, with: {app: Mail}}
+      - {wait: 1}
+```
+
+Chaque étape est une commande existante avec des arguments **écrits dans le YAML** : aucun appel
+Jev par étape, aucune valeur venue de la voix. Une routine qui contient une étape destructive
+devient destructive (confirmation).
+
+### Agent bureau
+
+Pour une tâche en plusieurs clics dans l'app au premier plan : la fenêtre est lue via
+l'accessibilité (boutons, champs, cases…), Jev choisit l'étape suivante parmi les éléments
+**observés**, le texte à taper est un segment de votre phrase. L'agent s'arrête avant tout
+élément sensible (envoyer, payer, supprimer, acheter…), ne tourne jamais dans un terminal et
+s'arrête après 12 actions, 60 s, ou si l'écran ne change plus. Il est toujours confirmé avant de démarrer.
+
+## Mains libres et réponse anticipée
+
+- **Réponse anticipée** (`speculate: true`) : pendant que vous maintenez la touche, l'audio
+  déjà capté est transcrit environ chaque seconde et Jev est interrogé en avance. Si vous avez fini
+  de parler avant de relâcher, la transcription et la réponse de Jev sont réutilisées. Le résultat
+  arrive alors presque immédiatement, et rien n'est exécuté avant le relâchement.
+- **Mains libres** (menu › *Mains libres*, ou `hands_free: true`) : le micro reste ouvert,
+  chaque phrase est transcrite **en local**, et seules celles qui commencent par le mot d'éveil
+  (`wake_words`, par défaut « Jarvis, … ») partent vers Jev. Après une commande, vous avez
+  `followup_seconds` (8 s) pour enchaîner sans le redire. « Jarvis » seul ouvre cette fenêtre.
+  L'indicateur micro orange de macOS reste allumé tant que le mode est actif. voxjev n'écoute
+  pas sa propre voix quand il lit une réponse.
+- **Verr. Maj comme touche de parole** : `./scripts/capslock.sh install` remappe Verr. Maj en F18
+  (persistant, via `hidutil`), puis mettez `hotkey: f18` dans la config. `uninstall` pour revenir.
+
 ## Configuration à faire une fois
 
 | Pour… | À faire |
@@ -148,6 +219,8 @@ la différence (voir `cases.tsv`).
 | lancer une musique précise et liker sur Spotify | app sur developer.spotify.com (Redirect URI `http://127.0.0.1:8888/callback`), `SPOTIFY_CLIENT_ID=...` dans `.env`, puis `./voxjev --spotify-login` |
 | l'agent web | Chrome › `chrome://inspect/#remote-debugging` › cocher « Allow remote debugging », puis cliquer « Allow » à la première connexion. Vérifier avec `uv run browser-harness --doctor` |
 | le push-to-talk | Réglages › Confidentialité › Accessibilité + Surveillance de l'entrée pour votre terminal (ou pour **voxjev**, si vous utilisez l'app ci-dessous) |
+| les questions générales et les brouillons de mail rédigés | `OPENROUTER_API_KEY` (même clé que ci-dessus) |
+| l'agenda, les rappels, les contacts | accepter les demandes d'accès de macOS au premier usage |
 | l'avoir toujours sous la main | `./scripts/install_app.sh --login` : crée `~/Applications/voxjev.app` (icône dans la barre des menus, sans Dock) et la lance à l'ouverture de session. Accordez **à voxjev** Micro, Accessibilité et Surveillance de l'entrée. Journal : `~/Library/Logs/voxjev/voxjev.log`. Désinstaller : `./scripts/install_app.sh --uninstall` |
 
 ## « Annule ça » et journal
@@ -252,16 +325,23 @@ Tout ce qui peut être exécuté est déclaré ici, sous forme de données, et v
   déclarer un `on_enter` (ex. `ctf` ouvre Ghostty/Terminal, Burp Suite et Chrome). Seules les
   commandes du mode actif sont proposées à Jev.
 - **Types d'argument** : `app` (fuzzy matching sur les apps installées + `app_aliases`), `text`
-  (texte libre, avec des `rewrite` regex optionnels, ex. `CVE 2014 0160` → `CVE-2014-0160`),
-  `enum` (valeur tirée de la config), `mode`.
+  (texte libre, avec des `rewrite` regex optionnels, ex. `CVE 2014 0160` → `CVE-2014-0160` ;
+  `strip_when: true` retire la date ; repli sur un segment choisi par Jev), `enum` (valeur tirée
+  de la config), `mode`, `pick` (candidat réel choisi par Jev : `source: menu | shortcut`),
+  `duration` et `when` (calculés par `when.py`).
 - **Types d'action (liste blanche)** : `open_app`, `quit_app`, `open_url`, `applescript`,
-  `keystroke`, `shortcut`, `exec`, `set_mode`, `sequence`.
+  `keystroke`, `shortcut`, `exec`, `set_mode`, `sequence`, `spotify`, `web_task`, `undo`, `menu`,
+  `type_text`, `keycombo`, `timer`, `reminder`, `calendar_add`, `calendar_read`, `note_add`,
+  `mail_draft`, `info`, `routine`, `file_open`, `memory_add`, `memory_ask`, `memory_forget`,
+  `mail_triage`, `ask`, `desktop_task`. Chaque champ n'accepte qu'un type d'argument précis
+  (ex. `timer.seconds` ← `duration`, `menu.item` ← `pick` de source `menu`) ; les raccourcis
+  clavier suivent une grammaire stricte (`cmd+shift+t`, `code:121`).
 
-Commandes fournies (26) : ouvrir/quitter une app, recherche web, YouTube, sites connus, volume
-+/−, muet, lecture/pause et morceau suivant (Spotify), capture d'écran, verrouillage, veille de
-l'écran, vider la corbeille, fermer la fenêtre, nouvel onglet, changer de mode ; en mode **ctf** :
-Exploit-DB, CVE, GTFOBins, revshells, CyberChef, nouveau terminal ; en mode **travail** : nouvel
-e-mail, recherche GitHub, nouvelle note.
+Commandes fournies (57 + 2 routines) : tout ce qui précède, plus ouvrir/quitter une app,
+recherche web, YouTube, sites connus, volume, muet, lecture/pause, morceau suivant, capture
+d'écran, verrouillage, veille de l'écran, corbeille, fenêtre, onglet, modes, Spotify, agent web ;
+en mode **ctf** : Exploit-DB, CVE, GTFOBins, revshells, CyberChef, nouveau terminal ; en mode
+**travail** : nouvel e-mail, recherche GitHub, nouvelle note.
 
 ## Sécurité
 
@@ -276,6 +356,11 @@ e-mail, recherche GitHub, nouvelle note.
 - `exec` n'accepte que des `argv` figés dont le binaire figure dans `settings.exec_allowlist`.
 - La validation de la config refuse les types d'action inconnus, les placeholders non déclarés ou
   placés dans un champ interdit, les schémas d'URL non autorisés, etc. (voir `tests/test_core.py`).
+- Un texte dicté (saisie, rappel, note, mail…) n'est jamais interprété : il est passé en `argv`
+  à un script AppleScript figé, ou tapé au clavier, **jamais dans un terminal** (`terminal_apps`).
+- Menus, Raccourcis, fichiers, éléments de fenêtre : seuls des candidats **observés** peuvent
+  être choisis, et un nom destructeur (supprimer, quitter, vider, envoyer…) impose une confirmation.
+- Les mails ne sont jamais envoyés, les achats et envois jamais faits par les agents.
 
 ## Données envoyées à l'API TypeSafe
 
@@ -289,12 +374,30 @@ Seule la requête Jev quitte la machine (`POST https://api.typesafe.ai/v1/system
 | `assistant_mode` | l'identifiant du mode actif (`defaut`, `ctf`, `travail`) |
 | `last_command` | l'identifiant de la dernière commande exécutée (ex. `open_app`), ou `none` |
 
-Les questions envoyées avec la requête ne contiennent que des éléments de la config (descriptions
-et exemples des commandes). Le mode et la dernière commande ne sont que des identifiants définis
-dans votre config : ni contenu utilisateur, ni argument.
+Les questions de cette requête contiennent les descriptions et exemples des commandes de la
+config, et, comme options à choisir :
 
-**Rien d'autre ne part** : ni l'audio (Whisper tourne en local), ni les arguments extraits, ni les
-fichiers, ni l'historique, ni le journal local. La clé est lue dans `TYPESAFE_API_KEY` (fichier `.env` non commité) et
+| Options | Contenu |
+|---|---|
+| menus | les intitulés des menus de l'app au premier plan (sauf Pomme, Aide, Fenêtre, Historique, Signets, éléments récents) |
+| Raccourcis | les noms de vos Raccourcis macOS |
+| segments | des morceaux de la phrase elle-même |
+
+Certaines commandes, **uniquement quand vous les prononcez**, font un 2ᵉ appel Jev :
+
+| Commande | Ce qui part en plus |
+|---|---|
+| ouvrir / montrer un fichier | pour chaque candidat Spotlight : nom du fichier, nom du dossier parent, date de modification (pas le chemin complet, pas le contenu) |
+| « c'est qui mon dentiste ? », « oublie… » | vos souvenirs enregistrés (n'y mettez pas de secrets) |
+| « quels mails demandent une action ? » | pour les 15 derniers non-lus : expéditeur, objet, 400 premiers caractères |
+| agent bureau | le nom de l'app, le titre de la fenêtre, les libellés des boutons et champs visibles |
+
+**Vers OpenRouter** (seulement si `OPENROUTER_API_KEY` est définie) : la phrase d'une demande
+composée (découpage), une question générale (« dis-moi… »), la consigne d'un brouillon de mail.
+
+**Rien d'autre ne part** : ni l'audio (Whisper tourne en local ; en mode mains libres, les
+phrases sans mot d'éveil ne quittent jamais la machine), ni l'agenda (lu localement), ni le
+contenu des fichiers, ni l'historique, ni le journal local. La clé est lue dans `TYPESAFE_API_KEY` (fichier `.env` non commité) et
 n'est jamais écrite en dur ni loggée. D'après TypeSafe, Jev n'est pas entraîné sur les requêtes des
 clients.
 
@@ -313,23 +416,25 @@ mlx-whisper tourne dans le même processus (modèle gardé en mémoire), sans co
 
 ## Évaluation (`./voxjev --eval`)
 
-`cases.tsv` : 82 phrases, au moins 2 qui déclenchent et 1 phrase proche qui ne doit **pas**
-déclencher par commande, plus du bruit conversationnel. Colonnes : phrase, id attendu ou `none`,
-mode (optionnel).
+`cases.tsv` : 175 phrases, au moins 2 qui déclenchent et 1 phrase proche qui ne doit **pas**
+déclencher par commande, plus du bruit conversationnel et 6 demandes composées. Colonnes :
+phrase, id attendu (ou `a>b` pour un plan) ou `none`, mode (optionnel). Les menus et Raccourcis
+sont figés pendant l'éval (`evaluate.py`) pour qu'elle soit reproductible.
 
-Résultat avec `jev-1.13.0` (contexte figé, dry-run, 6 appels en parallèle) :
+Résultat avec `jev-1.13.0` (dry-run, 8 appels en parallèle) :
 
 ```
-exactitude globale     : 81/82 = 98.8%
-précision (déclenchés) : 52/53 = 98.1%
-rappel (commandes)     : 100.0%  (0 ratés, 0 mauvaise commande, 0 arguments non extraits)
-faux déclenchements    : 1/30 phrases « none » = 3.3%  (dont 0 exécutés directement, 1 avec confirmation demandée)
-latence Jev            : p50 ~270 ms · p95 ~770 ms
-tokens d'entrée        : ~2 500 par appel (≈ 0,0001 $ par énoncé)
+exactitude globale     : 171/175 = 97.7%
+précision (déclenchés) : 117/120 = 97.5%
+rappel (commandes)     : 99.2%  (1 raté, 0 mauvaise commande, 0 arguments non extraits)
+faux déclenchements    : 3/51 phrases « none » = 5.9%  (0 exécutés directement, 3 avec confirmation demandée)
+demandes composées     : 6/6 plans exacts
+latence Jev            : p50 ~300 ms · p95 ~900 ms
+tokens d'entrée        : ~7 200 par appel (≈ 0,0003 $ par énoncé)
 ```
 
-Le seul faux déclenchement, « ferme la fenêtre il fait froid », passe par une confirmation. La
-majorité des tokens vient de la liste des apps installées.
+Les faux déclenchements (« ferme la fenêtre il fait froid », « on descend manger dans cinq
+minutes », « n'oublie pas de sortir la poubelle ce soir ») passent tous par une confirmation.
 
 ## Structure
 
@@ -350,7 +455,17 @@ src/voxjev/
   listen.py     boucle du mode micro (terminal)
   gui.py        interface : barre des menus + HUD non-activant + thread moteur
   evaluate.py   runner --eval
-tests/test_core.py
+  candidates.py candidats choisis par Jev : menus, Raccourcis, segments de phrase
+  axmenu.py     lecture et clic des menus via l'accessibilité
+  when.py       dates et durées en français
+  apple.py      agenda (EventKit), mails non lus, tri
+  files.py      Spotlight + choix Jev
+  memory.py     mémoire personnelle locale
+  llm.py        OpenRouter : réponses courtes, brouillons
+  desktop.py    agent bureau (arbre d'accessibilité)
+  multi.py, spotify.py, webagent.py   demandes composées, Spotify, agent web
+scripts/        install_app.sh (voxjev.app), launcher.c, capslock.sh
+tests/          test_core.py, test_multi.py, test_daily.py (103 tests, hors ligne)
 ```
 
 ## Limites connues
@@ -359,5 +474,10 @@ tests/test_core.py
   autorisations Accessibilité / Surveillance de l'entrée.
 - `play_pause` et `next_track` visent Spotify (à changer dans la config pour Music).
 - La liste des apps est lue une fois au démarrage du mode micro : redémarrez après une installation.
+- Les minuteurs vivent dans le processus : ils sont perdus si voxjev s'arrête.
+- Les menus ne sont lisibles que pour les apps qui exposent leur barre de menus à l'accessibilité
+  (la plupart). Certaines apps (Chrome) grisent des éléments quand elles ne sont pas au premier plan.
+- Le mode mains libres transcrit tout ce qu'il entend (localement) : plus gourmand en énergie.
+- Les écrans de réglages macOS sont peu accessibles : l'agent bureau y réussit moins bien.
 - Jev lit les phrases très littéralement. Pour ajouter une commande, donnez-lui une description
   distinctive et des exemples, puis ajoutez 3 lignes à `cases.tsv` et relancez `--eval`.

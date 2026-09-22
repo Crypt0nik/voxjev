@@ -52,7 +52,9 @@ from AppKit import (
 from Foundation import NSObject, NSString
 from PyObjCTools import AppHelper
 
-from .audio import PERMISSION_HELP, PushToTalk, accessibility_trusted, hotkey_label, request_permissions
+from .audio import (PERMISSION_HELP, HandsFree, PushToTalk, accessibility_trusted, hotkey_label, request_permissions,
+                    strip_wake_word)
+from .stt import MIN_RMS, SAMPLE_RATE
 from .cli import format_any
 from .config import Config, load_config
 from .context import Session
@@ -655,6 +657,9 @@ class Engine(threading.Thread):
         self.sounds = Sounds(config.settings.sounds, enabled=sound)
         self.transcriber = None
         self.launcher: Launcher | None = None
+        self.speak = config.settings.speak_answers
+        self.partial = ("", 0)  # (texte, nb d'échantillons couverts) : transcription anticipée
+        self.followup_until = 0.0  # fenêtre de suite du mode mains libres
 
     def ui(self, fn, *args) -> None:
         AppHelper.callAfter(fn, *args)
@@ -689,7 +694,14 @@ class Engine(threading.Thread):
             else:
                 self.ui(hud.show_message, "Push-to-talk désactivé", PERMISSION_TEXT, "error", 8.0)
         while True:
-            job = self.deferred.pop(0) if self.deferred else self.jobs.get()
+            if self.deferred:
+                job = self.deferred.pop(0)
+            else:
+                try:
+                    job = self.jobs.get(timeout=0.35)
+                except queue.Empty:
+                    self._partial_tick()
+                    continue
             if job is None:
                 return
             try:
@@ -699,10 +711,44 @@ class Engine(threading.Thread):
                 self.ui(hud.show_message, "Erreur interne", repr(exc), "error", 6.0)
                 self.ui(self.app.set_icon, "error")
 
+    # ---------------------------------------------------------------- anticipation
+    def _partial_tick(self) -> None:
+        """Pendant l'appui : transcrit l'audio déjà capté et lance Jev en avance."""
+        ptt = self.app.ptt
+        s = self.config.settings
+        if not (s.speculate and ptt and ptt.recorder.recording and self.transcriber and self.launcher):
+            return
+        audio = ptt.recorder.snapshot()
+        if audio.size < int(1.0 * SAMPLE_RATE) or audio.size - self.partial[1] < int(0.7 * SAMPLE_RATE):
+            return
+        text, _ = self.transcriber.transcribe(audio)
+        self.partial = (text, audio.size)
+        if text:
+            self.ui(self.app.hud.show_transcript, text)
+            self.launcher.speculate(text)
+
+    def _final_text(self, audio) -> tuple[str, float, bool]:
+        """Réutilise la transcription anticipée si la fin de l'audio n'est que du silence."""
+        text, covered = self.partial
+        self.partial = ("", 0)
+        tail = audio[covered:]
+        if text and covered and (tail.size == 0 or float((tail**2).mean() ** 0.5) < MIN_RMS * 1.5):
+            return text, 0.0, True
+        t, ms = self.transcriber.transcribe(audio)
+        return t, ms, False
+
     # ---------------------------------------------------------------- jobs
     def _handle(self, job) -> None:
         kind = job[0]
         hud, s = self.app.hud, self.config.settings
+        if kind == "press":
+            self.partial = ("", 0)
+            return
+        if kind == "hands_free":
+            job = self._hands_free(job)
+            if job is None:
+                return
+            kind = job[0]
         if kind == "mode":
             self.session.mode = job[1]
             self.session.save()
@@ -737,8 +783,8 @@ class Engine(threading.Thread):
                 return
             self.ui(hud.phase, "transcribing", "Transcription…", 0, True)
             self.ui(self.app.set_icon, "transcribing")
-            text, stt_ms = self.transcriber.transcribe(audio)
-            timings = {"audio_s": held, "stt_ms": stt_ms}
+            text, stt_ms, reused = self._final_text(audio)
+            timings = {"audio_s": held, "stt_ms": stt_ms} | ({"stt_anticipé": 1} if reused else {})
             if not text:
                 print(f"(rien compris — {held:.1f} s d'audio)", flush=True)
                 self.sounds.play("ignored")
@@ -747,6 +793,7 @@ class Engine(threading.Thread):
                 return
         else:
             text = job[1]
+            timings = dict(job[2]) if len(job) > 2 else {}
         self.ui(hud.show_transcript, text)
         self.ui(hud.phase, "thinking", "Jev réfléchit…", 0, True)
         self.ui(self.app.set_icon, "thinking")
@@ -762,6 +809,30 @@ class Engine(threading.Thread):
         self.ui(self.app.set_icon, "error" if out.status == "error" else "idle")
         self.ui(self.app.add_history, out)
         self.ui(self.app.refresh_mode)
+        if out.status in ("executed", "dry_run"):
+            self.followup_until = time.monotonic() + s.followup_seconds
+
+    def _hands_free(self, job):
+        """Phrase captée micro ouvert : transcrite en local ; ne part vers Jev qu'avec le mot d'éveil
+        (ou pendant la fenêtre de suite après une commande)."""
+        s, hud = self.config.settings, self.app.hud
+        audio, dur = job[1], job[2]
+        if self.transcriber is None:
+            return None
+        text, stt_ms = self.transcriber.transcribe(audio)
+        if not text:
+            return None
+        woke, rest = strip_wake_word(text, s.wake_words)
+        in_followup = time.monotonic() < self.followup_until
+        if not woke and not in_followup:
+            print(f"  (mains libres, ignoré localement : « {text} »)", flush=True)
+            return None
+        if woke and not rest:  # « Jarvis. » seul : on ouvre la fenêtre d'écoute
+            self.followup_until = time.monotonic() + s.followup_seconds
+            self.sounds.play("listening")
+            self.ui(hud.phase, "listening", "Je vous écoute…", s.followup_seconds)
+            return None
+        return ("text", rest if woke else text, {"audio_s": dur, "stt_ms": stt_ms})
 
     # ---------------------------------------------------------------- confirmation
     def _confirm(self, decision, args, steps) -> bool:
@@ -799,7 +870,7 @@ class Engine(threading.Thread):
                 job = self.jobs.get_nowait()
             except queue.Empty:
                 continue
-            if job and job[0] == "audio" and self.transcriber is not None:
+            if job and job[0] in ("audio", "hands_free") and self.transcriber is not None:
                 text, _ = self.transcriber.transcribe(job[1])
                 verdict = parse_yes_no(text) if text else None
                 print(f"  réponse vocale : {text!r} -> {verdict}")
@@ -845,6 +916,22 @@ class MenuTarget(NSObject):
     def reloadConfig_(self, sender):
         self.app.engine.jobs.put(("reload",))
 
+    def toggleHandsFree_(self, sender):
+        self.app.set_hands_free(not self.app.hands_free_on)
+
+    def toggleSpeak_(self, sender):
+        e = self.app.engine
+        e.speak = not e.speak
+        if e.launcher and e.launcher.executor:
+            e.launcher.executor.speak_answers = e.speak
+        self.app.rebuild_menu()
+
+    def openJournal_(self, sender):
+        from .context import JOURNAL
+
+        if JOURNAL.exists():
+            subprocess.Popen(["open", "-t", str(JOURNAL)])
+
     def openPrivacy_(self, sender):
         subprocess.Popen(["open", "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility"])
 
@@ -864,6 +951,7 @@ class GuiApp:
         self.target = MenuTarget.alloc().initWithApp_(self)
         self.item = NSStatusBar.systemStatusBar().statusItemWithLength_(NSVariableStatusItemLength)
         self.ptt: PushToTalk | None = None
+        self.hands_free: HandsFree | None = None
         self.set_icon("loading")
         self.refresh_mode()
 
@@ -918,13 +1006,40 @@ class GuiApp:
         sub.setSubmenu_(hist)
         menu.addItem_(sub)
         menu.addItem_(NSMenuItem.separatorItem())
+        wake = ", ".join(w.capitalize() for w in s.wake_words)
+        self._add(menu, f"Mains libres (dire « {wake}, … »)", "toggleHandsFree:", state=self.hands_free_on)
         self._add(menu, "Dry-run (ne rien exécuter)", "toggleDryRun:", state=e.dry_run)
         self._add(menu, "Sons", "toggleSound:", state=e.sounds.enabled)
+        self._add(menu, "Lire les réponses à voix haute", "toggleSpeak:", state=e.speak)
+        self._add(menu, "Ouvrir le journal des actions", "openJournal:")
         self._add(menu, "Ouvrir la configuration", "openConfig:", ",")
         self._add(menu, "Recharger la configuration", "reloadConfig:", "r")
         menu.addItem_(NSMenuItem.separatorItem())
         self._add(menu, "Quitter voxjev", "quit:", "q")
         self.item.setMenu_(menu)
+
+    @property
+    def hands_free_on(self) -> bool:
+        return bool(self.hands_free and self.hands_free.running)
+
+    def set_hands_free(self, on: bool) -> None:
+        if on and not self.hands_free_on:
+            try:
+                self.hands_free = HandsFree(
+                    on_clip=lambda audio, dur: self.engine.jobs.put(("hands_free", audio, dur)),
+                    on_level=lambda rms: AppHelper.callAfter(self.hud.level_push, rms),
+                )
+                self.hands_free.start()
+            except Exception as exc:
+                self.hud.show_message("Mains libres indisponible", str(exc), "error", 6.0)
+                self.hands_free = None
+            else:
+                wake = self.engine.config.settings.wake_words[0].capitalize()
+                self.hud.phase("idle", f"Mains libres : dites « {wake}, … »", 3.0)
+        elif not on and self.hands_free_on:
+            self.hands_free.stop()
+            self.hud.phase("idle", "Mains libres désactivé", 1.5)
+        self.rebuild_menu()
 
     def refresh_mode(self) -> None:
         self.hud.set_mode(self.engine.session.mode, self.engine.dry_run)
@@ -969,7 +1084,7 @@ class GuiApp:
             self.ptt = PushToTalk(
                 s.hotkey,
                 on_start=self._on_press,
-                on_clip=lambda audio, held: self.engine.jobs.put(("audio", audio, held)),
+                on_clip=self._on_clip,
                 on_level=lambda rms: AppHelper.callAfter(self.hud.level_push, rms),
             )
             self.ptt.start()
@@ -977,12 +1092,22 @@ class GuiApp:
             print(PERMISSION_HELP)
             if os.environ.get("VOXJEV_APP"):  # voxjev.app : fenêtres système de demande
                 request_permissions()
+        if s.hands_free:
+            self.set_hands_free(True)
         if initial_text:
             self.engine.jobs.put(("text", initial_text))
+
+    def _on_clip(self, audio, held) -> None:
+        if self.hands_free is not None:
+            self.hands_free.paused = False
+        self.engine.jobs.put(("audio", audio, held))
 
     def _on_press(self) -> None:
         """Appelé depuis le thread clavier : tout passe par callAfter."""
         self.engine.sounds.play("listening")
+        if self.hands_free is not None:
+            self.hands_free.paused = True
+        self.engine.jobs.put(("press",))
         if self.engine.launcher is not None:  # menus, Raccourcis, connexion Jev : prêts avant la fin de la phrase
             self.engine.launcher.prefetch()
         AppHelper.callAfter(self.set_icon, "listening")
@@ -997,6 +1122,8 @@ class GuiApp:
     def quit(self) -> None:
         if self.ptt:
             self.ptt.stop()
+        if self.hands_free_on:
+            self.hands_free.stop()
         self.engine.jobs.put(None)
         AppHelper.stopEventLoop()
 

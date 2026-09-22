@@ -174,6 +174,10 @@ class Settings:
     app_aliases: dict[str, str] = field(default_factory=dict)
     none_option: dict = field(default_factory=dict)
     speak_answers: bool = True
+    speculate: bool = True  # transcription + appel Jev anticipés pendant l'appui
+    hands_free: bool = False  # micro ouvert en continu, déclenché par le mot d'éveil
+    wake_words: tuple[str, ...] = ("jarvis",)
+    followup_seconds: float = 8.0  # après une commande : on peut enchaîner sans le mot d'éveil
     voice: str = ""
     terminal_apps: tuple[str, ...] = ()
 

@@ -62,11 +62,52 @@ class Launcher:
         self.current: Outcome | None = None  # énoncé en cours (lu par les confirmateurs graphiques)
         self.provider = provider or Provider()
         self._warm_at = 0.0
+        self._spec: dict = {}  # clé de requête -> (instant, future) : réponses anticipées
+        self._pool = None
         if executor is not None:
             if getattr(executor, "client", "absent") is None:
                 executor.client = client
             if getattr(executor, "settings", "absent") is None:
                 executor.settings = config.settings
+
+    def _request(self, transcript: str, mode: str):
+        commands = self.config.commands_for_mode(mode)
+        state = build_state(transcript, self._frontmost(), self.apps, mode, self.session.last_command)
+        cands = self.provider.gather(self.sources_for(commands), transcript)
+        hints = {}
+        if cands.get("shortcut"):
+            names = ", ".join(c.label for c in cands["shortcut"][:40])
+            hints = {c.id: f"raccourcis de l'utilisateur : {names}" for c in commands
+                     if any(a.type == "pick" and a.source == "shortcut" for a in c.args.values())}
+        return state, commands, cands, hints
+
+    @staticmethod
+    def _key(state, commands, cands, hints) -> str:
+        import json
+
+        return json.dumps([state, [c.id for c in commands], {k: [c.label for c in v] for k, v in cands.items()},
+                           hints], sort_keys=True, ensure_ascii=False)
+
+    def speculate(self, transcript: str) -> None:
+        """Transcription partielle pendant l'appui : lance l'appel Jev en avance (sans rien exécuter).
+
+        Si la phrase finale est identique, ``plan`` réutilise la réponse : la latence Jev disparaît.
+        """
+        from concurrent.futures import ThreadPoolExecutor
+
+        transcript = transcript.strip()
+        if not transcript:
+            return
+        state, commands, cands, hints = self._request(transcript, self.session.mode)
+        key = self._key(state, commands, cands, hints)
+        if key in self._spec:
+            return
+        if self._pool is None:
+            self._pool = ThreadPoolExecutor(max_workers=2, thread_name_prefix="voxjev-spec")
+        now = time.monotonic()
+        self._spec = {k: v for k, v in self._spec.items() if now - v[0] < 20}
+        self._spec[key] = (now, self._pool.submit(self.client.evaluate, state, commands,
+                                                   self.config.settings.none_option, cands or None, hints or None))
 
     def sources_for(self, commands) -> set[str]:
         """Sources de candidats utiles pour ces commandes (menus, Raccourcis, segments)."""
@@ -111,19 +152,19 @@ class Launcher:
         s = self.config.settings
         mode = mode or self.session.mode
         t0 = time.perf_counter()
-        commands = self.config.commands_for_mode(mode)
-        state = build_state(transcript, self._frontmost(), self.apps, mode, self.session.last_command)
-        cands = self.provider.gather(self.sources_for(commands), transcript)
+        state, commands, cands, hints = self._request(transcript, mode)
         out.candidates = cands
-        hints = {}
-        if cands.get("shortcut"):
-            names = ", ".join(c.label for c in cands["shortcut"][:40])
-            hints = {c.id: f"raccourcis de l'utilisateur : {names}" for c in commands
-                     if any(a.type == "pick" and a.source == "shortcut" for a in c.args.values())}
         out.timings["context_ms"] = (time.perf_counter() - t0) * 1000
 
         try:
-            out.result = self.client.evaluate(state, commands, s.none_option, picks=cands or None, hints=hints or None)
+            key = self._key(state, commands, cands, hints)
+            spec = self._spec.get(key)
+            if spec is not None and time.monotonic() - spec[0] < 20:
+                out.result = spec[1].result(timeout=10)  # réponse anticipée pendant qu'on parlait
+                out.timings["speculated"] = 1
+            else:
+                out.result = self.client.evaluate(state, commands, s.none_option, picks=cands or None,
+                                                  hints=hints or None)
         except JevError as exc:
             out.status, out.error = "error", str(exc)
             return out

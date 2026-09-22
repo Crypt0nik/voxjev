@@ -62,7 +62,11 @@ def notify(title: str, text: str, sound: str = "Glass") -> None:
 
 def speak(text: str, voice: str = "") -> None:
     """Lecture à voix haute (say), non bloquante. Le texte passe en argv."""
-    argv = ["say"] + (["-v", voice] if voice else []) + ["--", text[:600]]
+    from .audio import SPEAKING_UNTIL
+
+    text = text[:600]
+    SPEAKING_UNTIL[0] = time.time() + 1.0 + len(text) / 13  # le mode mains libres n'écoute pas sa propre voix
+    argv = ["say"] + (["-v", voice] if voice else []) + ["--", text]
     subprocess.Popen(argv, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
 

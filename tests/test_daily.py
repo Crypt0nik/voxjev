@@ -257,3 +257,44 @@ def test_triage_one_call_two_nouls_per_mail():
     rows = triage(C(), [Mail("Paul <p@x.fr>", "Signature du contrat", "peux-tu signer"), Mail("Promo", "Soldes", "…")])
     text = describe_triage(rows)
     assert "1 demande une action" in text and "Paul — Signature du contrat" in text
+
+
+# ------------------------------------------------------------------ mains libres et anticipation
+def test_hands_free_vad_cuts_one_utterance(monkeypatch):
+    import sys
+    import types
+
+    import numpy as np
+
+    monkeypatch.setitem(sys.modules, "sounddevice", types.SimpleNamespace())
+    from voxjev.audio import HandsFree
+
+    clips = []
+    hf = HandsFree(on_clip=lambda audio, dur: clips.append(dur))
+    block = HandsFree.BLOCK
+    rng = np.random.default_rng(0)
+    feed = lambda amp, seconds: [hf._callback((rng.standard_normal((block, 1)) * amp).astype("float32"), block, None, None)
+                                 for _ in range(int(seconds * 16000 / block))]
+    feed(0.002, 1.0)   # bruit de fond
+    feed(0.2, 1.2)     # voix
+    feed(0.002, 1.0)   # silence -> fin de phrase
+    feed(0.2, 0.1)     # clic isolé : trop court
+    feed(0.002, 1.0)
+    assert len(clips) == 1 and 1.2 <= clips[0] <= 2.2
+
+
+def test_wake_word():
+    from voxjev.audio import strip_wake_word
+
+    assert strip_wake_word("Hey Jarvis, ouvre Chrome", ("jarvis",)) == (True, "ouvre Chrome")
+    assert strip_wake_word("le film Jarvis était bien", ("jarvis",))[0] is False
+
+
+def test_speculation_reuses_jev_answer(config):
+    lz = launcher(config, {"quelle heure est-il": res("info")})
+    lz.speculate("quelle heure est-il")
+    lz._spec[next(iter(lz._spec))][1].result(timeout=5)
+    out = lz.plan("quelle heure est-il")
+    assert out.timings.get("speculated") == 1 and len(lz.client.calls) == 1
+    lz.plan("quelle heure est-il maintenant")  # phrase différente : nouvel appel
+    assert len(lz.client.calls) == 2

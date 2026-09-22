@@ -27,15 +27,23 @@ conservant la mention de copyright** ; sans licence, on ne reprend que les idée
 - Générateurs de comptes / « clés illimitées » (contournement des conditions de TypeSafe) : exclus.
 - Proxys « imitant » Jev, routeurs de modèles pour agents de code : hors sujet pour voxjev.
 
-## Plan d'intégration retenu
+## Ce qui est intégré dans voxjev (2026-09-22)
 
-1. **Toujours là** : lancement à l'ouverture de session (LaunchAgent) + `voxjev.app` ; option
-   Verr. Maj → F18 (jev-voice) ; « annule ça » + journal.
-2. **Routines et raccourcis** : routines perso dans le YAML ; import automatique des Raccourcis
-   macOS ; **menus de n'importe quelle app (DWIM)**.
-3. **Productivité** : rappels/minuteurs, agenda, notes dictées (dates lues par Jev, calcul en code).
-4. **« Sélectionner plutôt que générer »** (jev-voice) : arguments texte choisis par Jev parmi des
-   segments de la phrase quand les regex échouent ; saisie de texte de l'agent web sans LLM.
-5. **Fichiers** : Spotlight + reranking Jev.
-6. Plus tard : mot d'éveil + fenêtre de suite, décisions en streaming, agent bureau (accessibilité),
-   triage des mails, mémoire personnelle.
+Le code est réécrit pour voxjev (aucun fichier copié) ; les idées sont créditées dans les modules.
+
+| Idée | Source | Où dans voxjev |
+|---|---|---|
+| Menus de n'importe quelle app, noms destructeurs toujours confirmés | dwim | `axmenu.py`, commande `menu_item` |
+| « Sélectionner plutôt que générer » (segments de phrase choisis par Jev) | jev-voice | `candidates.py` (`spans`), repli des arguments texte |
+| Mot d'éveil + fenêtre de suite de 8 s | jev-voice | `audio.HandsFree`, `gui.Engine._hands_free` |
+| Verr. Maj → F18 | jev-voice | `scripts/capslock.sh` |
+| Raccourcis clavier, défilement, saisie, réponse vocale `say` | jev-voice | `key_shortcut`, `scroll`, `type_text`, `executor.speak` |
+| Agent bureau sur l'arbre d'accessibilité | jev-voice (portage de jev-ultrafast) | `desktop.py` |
+| Décider pendant qu'on parle | jev-voice-browser, jev-canvas | transcription partielle + appel Jev anticipé (`Launcher.speculate`) |
+| « Annuler » vocal | jev-canvas | `undo_last` + `undo:` dans le YAML |
+| Tri des mails (action requise ? important ?) | jev-mail | `apple.triage` (2 Nouls par mail, un appel) |
+| Mémoire personnelle avec rappel classé par Jev | hippo-memory (idée seulement) | `memory.py` |
+| Recherche de fichiers : candidats puis classement Jev | jev-reranker (idée seulement) | `files.py` |
+
+Pas encore repris : le mode « recommend » et les échecs de jev-voice (hors sujet), le contexte
+de l'écran (capture), l'historique du shell (mrnugget/jev-shell-history).
