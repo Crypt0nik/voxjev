@@ -121,6 +121,9 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     p = argparse.ArgumentParser(prog="voxjev", description="Lanceur vocal macOS avec Jev comme couche de décision.")
     p.add_argument("--text", help="traiter une phrase au lieu du micro")
     p.add_argument("--audio", help="traiter un fichier audio (wav/aiff/mp3…) : Whisper puis Jev, sans micro")
+    p.add_argument("--script", metavar="FICHIER",
+                   help="avec --gui : joue un scénario (une phrase par ligne, « phrase | pause en s »), "
+                        "comme si les phrases étaient dites — pour les démos vidéo")
     p.add_argument("--gui", action="store_true",
                    help="interface graphique : icône de barre des menus + HUD flottant (avec --text : phrase de démo)")
     p.add_argument("--dry-run", action="store_true", help="afficher le plan sans rien exécuter")
@@ -180,7 +183,7 @@ def main(argv: list[str] | None = None) -> int:
         from .gui import run_gui
 
         return run_gui(config, client, session, dry_run=args.dry_run, sound=not args.no_sound,
-                       initial_text=args.text)
+                       initial_text=args.text, script=args.script)
 
     if args.text is not None:
         executor = None

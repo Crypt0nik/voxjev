@@ -1,0 +1,10 @@
+# Scénario joué par : voxjev --gui --script demo/scenario.txt   (« phrase | pause en secondes »)
+passe en mode démo | 1.5
+ouvre la calculatrice et lance mes projets | 7
+mets cette fenêtre à gauche | 2.5
+remets les fenêtres comme avant | 3
+cherche la météo à Paris et ouvre le premier lien | 5
+quelle heure est-il | 4
+range les fenêtres | 5
+ferme les projets | 2
+passe en mode par défaut | 1

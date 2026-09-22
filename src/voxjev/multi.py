@@ -88,10 +88,26 @@ Règles :
 - Chaque étape doit se comprendre seule : remplace les pronoms par ce qu'ils désignent
   (« cherche Get Lucky puis lance-la » -> « lance Get Lucky ») et garde le contexte d'app
   (« ouvre Spotify et cherche Daft Punk » -> « cherche Daft Punk dans Spotify »).
+- Ne cite JAMAIS une application, un site ou un navigateur qui n'apparaît pas dans la phrase.
 - Si la phrase ne demande qu'une seule action, renvoie une seule étape.
 - Au plus {max_steps} étapes.
 
 Réponds UNIQUEMENT avec un objet JSON : {{"steps": ["...", "..."]}}"""
+
+
+_ADDED_CONTEXT = re.compile(r"\s+(?:dans|sur|avec|via)\s+([A-ZÀ-Ö][\w'.-]*(?:\s+[A-ZÀ-Ö][\w'.-]*)*)\s*$")
+
+
+def drop_invented_context(steps: list[str], original: str) -> list[str]:
+    """Garde-fou : retire « dans Safari » & co. si l'app n'était pas dans la phrase d'origine."""
+    low = original.lower()
+    out = []
+    for step in steps:
+        m = _ADDED_CONTEXT.search(step)
+        if m and m.group(1).lower() not in low:
+            step = step[: m.start()].rstrip()
+        out.append(step)
+    return out
 
 
 class LLMSplitter:
@@ -152,6 +168,7 @@ class Splitter:
     def split(self, text: str, max_steps: int) -> list[str]:
         if self.llm:
             steps = self.llm.split(text, max_steps)
+            steps = drop_invented_context(steps, text) if steps else steps
             if steps:
                 return steps
         return split_rules(text)[:max_steps]

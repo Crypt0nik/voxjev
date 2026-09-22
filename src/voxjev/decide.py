@@ -46,7 +46,8 @@ def decide(result: JevResult, commands: dict[str, Command], s: Settings) -> Deci
     if p < s.confirm_floor:
         return Decision(Verdict.IGNORE, cmd, code="low_p", reason=f"trop incertain (p={p:.2f} < {s.confirm_floor:.2f})")
     # « annule ça » : c'est le code qui juge l'action inverse réelle (Launcher._plan_undo), pas le Noul.
-    jev_destructive = result.destructive >= s.destructive_threshold and cmd.action.get("type") != "undo"
+    jev_destructive = (result.destructive >= s.destructive_threshold and cmd.action.get("type") != "undo"
+                       and cmd.destructive_noul)
     destructive = cmd.destructive or jev_destructive
     if destructive:
         why = "config" if cmd.destructive else f"Noul={result.destructive:.2f}"

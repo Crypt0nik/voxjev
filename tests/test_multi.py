@@ -154,3 +154,13 @@ def test_dry_run_plan_executes_nothing(config):
     }, dry_run=True)
     plan = r.handle("ouvre Spotify et monte le son")
     assert plan.status == "dry_run" and not ex.runs
+
+
+def test_llm_split_never_invents_an_app():
+    from voxjev.multi import drop_invented_context
+
+    steps = drop_invented_context(["cherche la météo à Paris dans Safari", "ouvre le premier lien"],
+                                  "cherche la météo à Paris et ouvre le premier lien")
+    assert steps == ["cherche la météo à Paris", "ouvre le premier lien"]
+    kept = drop_invented_context(["cherche Daft Punk dans Spotify"], "ouvre Spotify et cherche Daft Punk")
+    assert kept == ["cherche Daft Punk dans Spotify"]

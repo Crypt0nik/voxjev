@@ -65,7 +65,7 @@ def speak(text: str, voice: str = "") -> None:
     from .audio import SPEAKING_UNTIL
 
     text = text[:600]
-    SPEAKING_UNTIL[0] = time.time() + 1.0 + len(text) / 13  # le mode mains libres n'écoute pas sa propre voix
+    SPEAKING_UNTIL[0] = time.time() + 2.5 + len(text) / 12  # le mode mains libres n'écoute pas sa propre voix
     argv = ["say"] + (["-v", voice] if voice else []) + ["--", text]
     subprocess.Popen(argv, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 

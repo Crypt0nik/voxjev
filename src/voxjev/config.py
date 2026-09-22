@@ -148,6 +148,9 @@ class Command:
     label: str = ""  # libellé court pour l'interface, ex. « Ouvrir {app} »
     always_confirm: bool = False  # confirmation systématique (ex. agent web sur votre profil Chrome)
     undo: dict | None = None  # action inverse, pour « annule ça » (mêmes arguments + {previous_mode})
+    # false : la config fait foi pour « destructif » (le Noul de Jev est ignoré). Pour les commandes dont
+    # l'effet est connu et limité (ex. fermer uniquement les fenêtres de démo).
+    destructive_noul: bool = True
 
     def short(self, values: dict[str, str] | None = None) -> str:
         """Libellé lisible, arguments inclus : « Ouvrir Spotify »."""
@@ -547,6 +550,7 @@ def load_config(path: str | Path | None = None, user: dict | None = None) -> Con
             label=str(c.get("label", "")),
             always_confirm=bool(c.get("always_confirm", False)),
             undo=c.get("undo"),
+            destructive_noul=bool(c.get("destructive_noul", True)),
         )
 
     _check_routines(commands)

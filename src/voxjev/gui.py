@@ -161,6 +161,17 @@ class Engine(threading.Thread):
         if kind == "press":
             self.partial = ("", 0)
             return
+        if kind == "script":  # démo : chaque phrase comme si elle était dite
+            time.sleep(1.5)
+            for phrase, pause in job[1]:
+                print(f"🎬 scénario : « {phrase} »", flush=True)
+                self.sounds.play("listening")
+                self.ui(hud.phase, "listening", "Écoute…")
+                time.sleep(0.9)
+                self._handle(("text", phrase))
+                time.sleep(pause)
+            print("🎬 scénario terminé", flush=True)
+            return
         if kind == "hands_free":
             job = self._hands_free(job)
             if job is None:
@@ -608,7 +619,7 @@ class GuiApp:
             print(PERMISSION_HELP)
             if os.environ.get("VOXJEV_APP"):  # voxjev.app : fenêtres système de demande
                 request_permissions()
-        if s.hands_free:
+        if s.hands_free and not getattr(self, "script_mode", False):
             self.set_hands_free(True)
         if initial_text:
             self.engine.jobs.put(("text", initial_text))
@@ -644,10 +655,25 @@ class GuiApp:
         AppHelper.stopEventLoop()
 
 
+def load_script(path: str) -> list[tuple[str, float]]:
+    """Scénario de démo : une phrase par ligne, « phrase | pause » (secondes, 3 par défaut), # = commentaire."""
+    items = []
+    for line in open(path, encoding="utf-8"):
+        line = line.strip()
+        if not line or line.startswith("#"):
+            continue
+        phrase, _, pause = line.partition("|")
+        items.append((phrase.strip(), float(pause) if pause.strip() else 3.0))
+    return items
+
+
 def run_gui(config: Config, client, session: Session, *, dry_run: bool = False, sound: bool = True,
-            initial_text: str | None = None) -> int:
+            initial_text: str | None = None, script: str | None = None) -> int:
     app = GuiApp(config, client, session, dry_run, sound)
+    app.script_mode = bool(script)  # démo scénarisée : micro mains libres jamais ouvert
     app.start(initial_text)
+    if script:
+        app.engine.jobs.put(("script", load_script(script)))
     print(f"voxjev (interface) — mode {session.mode}. Icône dans la barre des menus ; Ctrl+C pour quitter.")
     AppHelper.runEventLoop(installInterrupt=True)
     return 0

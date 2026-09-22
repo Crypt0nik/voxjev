@@ -22,7 +22,7 @@ fenêtres qui se rangent toutes seules, vrais tests qui défilent.
 | Temps | Vous dites (en maintenant ⌥ droite) | À l'écran |
 |---|---|---|
 | 0:00 | « passe en mode démo » | la capsule Liquid Glass apparaît, l'orbe réagit à la voix |
-| 0:04 | « ouvre Spotify et lance mes projets » | Spotify s'ouvre, puis **4 terminaux** : API, entraînement, déploiement, tests. Ils glissent en **grille** |
+| 0:04 | « ouvre la calculatrice et lance mes projets » | la Calculatrice s'ouvre, puis **4 terminaux** : API, entraînement, déploiement, tests. Ils glissent en **grille** |
 | 0:12 | *(laisser tourner 5 s)* | barres de progression, requêtes en direct, **110 tests réussis en 0,5 s**, évaluation Jev qui défile |
 | 0:18 | « mets la fenêtre des tests en grand » *(cliquez d'abord dessus)* ou « mets cette fenêtre à gauche » | la fenêtre prend la moitié de l'écran |
 | 0:22 | « remets les fenêtres comme avant » | tout reprend sa place, animé |
@@ -37,6 +37,12 @@ fenêtres qui se rangent toutes seules, vrais tests qui défilent.
 - Sous-titrer chaque phrase dite ; afficher en incrustation les chiffres du HUD
   (« Jev 300 ms », « total 1,1 s »).
 - Plan final : le logo et « Whisper local · Jev · 110 tests · open source ».
+
+## Démo jouée automatiquement
+
+```bash
+./voxjev --gui --script demo/scenario.txt   # les phrases du scénario, comme si elles étaient dites
+```
 
 ## Commandes utiles
 
