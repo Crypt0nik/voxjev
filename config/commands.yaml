@@ -59,6 +59,17 @@ settings:
   # Retours : les réponses (agenda, heure, questions…) sont lues à voix haute (say).
   speak_answers: true
   voice: ""                 # voix de `say` (vide = voix du système ; ex. Thomas, Amélie)
+  # Mode sans confirmation (activable dans le menu) : ces commandes sans risque s'exécutent
+  # directement dès que Jev les reconnaît au-dessus des planchers (confirm_floor, addressed_floor).
+  # Les actions destructives, la saisie de texte, les mails et les agents restent confirmés.
+  quiet_mode: true
+  safe_commands: [open_app, open_website, web_search, youtube_search, new_tab, volume_up, volume_down,
+                  toggle_mute, play_pause, next_track, spotify_play, spotify_search, spotify_like, switch_mode,
+                  key_shortcut, scroll, dark_mode, brightness_up, brightness_down, wifi_on, set_timer, info,
+                  agenda_read, reminder_add, event_add, note_add, open_file, reveal_file, memory_add,
+                  memory_ask, ask_question, screenshot, github_search, exploitdb_search, cve_search,
+                  gtfobins_lookup, open_revshells, open_cyberchef, new_terminal_tab, new_email, new_note,
+                  routine_matin, routine_concentration, undo_last]
   pick_min_p: 0.50           # choix de Jev parmi des candidats réels (menus, Raccourcis, segments, fichiers)
   # Jamais de saisie dictée ni d'agent bureau dans ces apps (un texte dicté n'y devient pas une commande).
   terminal_apps: [Terminal, iTerm2, Ghostty, Warp, kitty, Alacritty, WezTerm, Hyper, Tabby, Visual Studio Code, Cursor]

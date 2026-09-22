@@ -919,6 +919,12 @@ class MenuTarget(NSObject):
     def toggleHandsFree_(self, sender):
         self.app.set_hands_free(not self.app.hands_free_on)
 
+    def toggleQuiet_(self, sender):
+        e = self.app.engine
+        e.session.quiet = not e.launcher.settings.quiet_mode if e.launcher else not e.config.settings.quiet_mode
+        e.session.save()
+        self.app.rebuild_menu()
+
     def toggleSpeak_(self, sender):
         e = self.app.engine
         e.speak = not e.speak
@@ -1008,6 +1014,8 @@ class GuiApp:
         menu.addItem_(NSMenuItem.separatorItem())
         wake = ", ".join(w.capitalize() for w in s.wake_words)
         self._add(menu, f"Mains libres (dire « {wake}, … »)", "toggleHandsFree:", state=self.hands_free_on)
+        quiet = e.launcher.settings.quiet_mode if e.launcher else s.quiet_mode
+        self._add(menu, "Sans confirmation pour les actions sans risque", "toggleQuiet:", state=quiet)
         self._add(menu, "Dry-run (ne rien exécuter)", "toggleDryRun:", state=e.dry_run)
         self._add(menu, "Sons", "toggleSound:", state=e.sounds.enabled)
         self._add(menu, "Lire les réponses à voix haute", "toggleSpeak:", state=e.speak)

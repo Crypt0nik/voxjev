@@ -32,6 +32,7 @@ def decide(result: JevResult, commands: dict[str, Command], s: Settings) -> Deci
     2. adressé < addressed_floor                  -> ignorer
     3. p(commande) < confirm_floor                -> ignorer
     4. destructive (config OU Noul >= seuil)      -> confirmer, quelle que soit p
+    4b. mode sans confirmation + commande sans risque (settings.safe_commands) -> exécuter
     5. adressé < addressed_threshold              -> confirmer (adressé incertain)
     6. p(commande) < threshold                    -> confirmer
     7. sinon                                      -> exécuter
@@ -53,10 +54,14 @@ def decide(result: JevResult, commands: dict[str, Command], s: Settings) -> Deci
     if cmd.always_confirm:
         return Decision(Verdict.CONFIRM, cmd, "confirmation systématique (config)", code="always_confirm")
     if result.addressed < s.addressed_threshold:
-        return Decision(Verdict.CONFIRM, cmd, code="uncertain_addressed", reason=f"adressé incertain ({result.addressed:.2f} < {s.addressed_threshold:.2f})")
-    if p < s.threshold:
-        return Decision(Verdict.CONFIRM, cmd, code="medium_p", reason=f"confiance moyenne (p={p:.2f} < {s.threshold:.2f})")
-    return Decision(Verdict.EXECUTE, cmd, code="ok", reason=f"p={p:.2f} >= {s.threshold:.2f}")
+        doubt = Decision(Verdict.CONFIRM, cmd, code="uncertain_addressed", reason=f"adressé incertain ({result.addressed:.2f} < {s.addressed_threshold:.2f})")
+    elif p < s.threshold:
+        doubt = Decision(Verdict.CONFIRM, cmd, code="medium_p", reason=f"confiance moyenne (p={p:.2f} < {s.threshold:.2f})")
+    else:
+        return Decision(Verdict.EXECUTE, cmd, code="ok", reason=f"p={p:.2f} >= {s.threshold:.2f}")
+    if s.quiet_mode and cmd.id in s.safe_commands:  # action sans risque : pas de confirmation
+        return Decision(Verdict.EXECUTE, cmd, code="safe", reason=f"action sans risque, sans confirmation ({doubt.reason})")
+    return doubt
 
 
 _YES = re.compile(r"^\W*(oui|ouais|yes|ok|okay|d'accord|vas-?y|go|confirme\w*|valide\w*|exécute\w*|c'est bon|bien sûr)\b", re.I)
@@ -88,5 +93,6 @@ def explain(decision: Decision, p: float, dry_run: bool = False) -> str:
         "fallback": "Jev hésitait : 2e option retenue, confirmation demandée.",
         "uncertain_addressed": "Pas sûr que ça m'était adressé : confirmation demandée.",
         "medium_p": f"Confiance moyenne ({pct}) : confirmation demandée.",
+        "safe": "Action sans risque : " + ("aurait été exécutée sans confirmation." if dry_run else "exécutée sans confirmation."),
         "ok": f"Confiance {pct} : " + ("aurait été exécuté directement." if dry_run else "exécution directe."),
     }.get(decision.code, decision.reason)

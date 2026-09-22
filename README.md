@@ -196,6 +196,17 @@ l'accessibilité (boutons, champs, cases…), Jev choisit l'étape suivante parm
 élément sensible (envoyer, payer, supprimer, acheter…), ne tourne jamais dans un terminal et
 s'arrête après 12 actions, 60 s, ou si l'écran ne change plus. Il est toujours confirmé avant de démarrer.
 
+## Mode sans confirmation (activé par défaut)
+
+Les commandes sans risque de `settings.safe_commands` s'exécutent **directement**, même quand Jev
+hésite un peu (confiance moyenne ou « adressé » incertain) : ouvrir une app ou une page, une
+recherche, le volume, la musique, les infos, l'agenda, les rappels, les notes… Menu › *Sans
+confirmation pour les actions sans risque* pour le couper (le choix est mémorisé).
+
+Restent **toujours** confirmés : les actions destructives (config ou Noul), quitter une app,
+fermer une fenêtre, la saisie de texte, les mails, les Raccourcis et menus inconnus, les agents
+web et bureau. Et les planchers restent : une phrase trop incertaine ou non adressée est ignorée.
+
 ## Mains libres et réponse anticipée
 
 - **Réponse anticipée** (`speculate: true`) : pendant que vous maintenez la touche, l'audio

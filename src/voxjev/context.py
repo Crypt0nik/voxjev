@@ -60,6 +60,7 @@ class Session:
     last_command: str | None = None
     last_args: dict = field(default_factory=dict)
     previous_mode: str | None = None
+    quiet: bool | None = None  # mode sans confirmation choisi dans le menu (None = valeur de la config)
     path: Path | None = field(default=STATE_FILE, repr=False)
 
     @classmethod
@@ -69,7 +70,8 @@ class Session:
                 data = json.loads(path.read_text())
                 mode = data.get("mode") if data.get("mode") in known_modes else default_mode
                 return cls(mode=mode, last_command=data.get("last_command"),
-                           last_args=data.get("last_args") or {}, previous_mode=data.get("previous_mode"), path=path)
+                           last_args=data.get("last_args") or {}, previous_mode=data.get("previous_mode"),
+                           quiet=data.get("quiet"), path=path)
             except (OSError, ValueError):
                 pass
         return cls(mode=default_mode, path=path)
@@ -79,7 +81,8 @@ class Session:
             return
         self.path.parent.mkdir(parents=True, exist_ok=True)
         self.path.write_text(json.dumps({"mode": self.mode, "last_command": self.last_command,
-                                         "last_args": self.last_args, "previous_mode": self.previous_mode}))
+                                         "last_args": self.last_args, "previous_mode": self.previous_mode,
+                                         "quiet": self.quiet}))
 
 
 JOURNAL = Path(os.environ.get("VOXJEV_JOURNAL", "~/Library/Logs/voxjev/history.jsonl")).expanduser()

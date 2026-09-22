@@ -70,6 +70,14 @@ class Launcher:
             if getattr(executor, "settings", "absent") is None:
                 executor.settings = config.settings
 
+    @property
+    def settings(self):
+        """Réglages de la config, avec le mode sans confirmation choisi dans le menu."""
+        from dataclasses import replace
+
+        s = self.config.settings
+        return s if self.session.quiet is None else replace(s, quiet_mode=self.session.quiet)
+
     def _request(self, transcript: str, mode: str):
         commands = self.config.commands_for_mode(mode)
         state = build_state(transcript, self._frontmost(), self.apps, mode, self.session.last_command)
@@ -149,7 +157,7 @@ class Launcher:
         if not transcript:
             out.error = "transcript vide"
             return out
-        s = self.config.settings
+        s = self.settings
         mode = mode or self.session.mode
         t0 = time.perf_counter()
         state, commands, cands, hints = self._request(transcript, mode)
@@ -189,8 +197,9 @@ class Launcher:
                 alt_args = extract_args(alt, transcript, self.config, self.apps, picks, cands)
                 if alt_args.ok:
                     reason = f"repli sur la 2e option ({alt_id} p={alt_p:.2f}) : {cmd.id} sans argument valide"
-                    out.decision = Decision(Verdict.CONFIRM, alt, reason, destructive=alt.destructive,
-                                            code="fallback")
+                    quiet = s.quiet_mode and alt.id in s.safe_commands and not alt.destructive
+                    out.decision = Decision(Verdict.EXECUTE if quiet else Verdict.CONFIRM, alt, reason,
+                                            destructive=alt.destructive, code="safe" if quiet else "fallback")
                     cmd, out.args = alt, alt_args
                     break
         if not out.args.ok:

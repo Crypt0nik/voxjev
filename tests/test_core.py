@@ -109,7 +109,9 @@ def test_mode_and_enum_args(config):
 
 # ------------------------------------------------------------------ décision
 def test_decide_rules(config):
-    cmds, s = config.commands, config.settings
+    from dataclasses import replace
+
+    cmds, s = config.commands, replace(config.settings, quiet_mode=False)
     assert decide(result("open_app", 0.9), cmds, s).verdict == Verdict.EXECUTE
     assert decide(result("open_app", 0.6), cmds, s).verdict == Verdict.CONFIRM
     assert decide(result("open_app", 0.3), cmds, s).verdict == Verdict.IGNORE
@@ -119,6 +121,23 @@ def test_decide_rules(config):
     # destructive : config OU Noul -> confirmation systématique, même à p=1
     assert decide(result("empty_trash", 1.0), cmds, s).verdict == Verdict.CONFIRM
     assert decide(result("open_app", 1.0, destructive=0.8), cmds, s).verdict == Verdict.CONFIRM
+
+
+def test_quiet_mode_skips_confirmation_for_safe_commands_only(config):
+    cmds, s = config.commands, config.settings
+    assert s.quiet_mode and "open_app" in s.safe_commands
+    d = decide(result("open_app", 0.6), cmds, s)
+    assert d.verdict == Verdict.EXECUTE and d.code == "safe"
+    assert decide(result("open_app", 0.9, addressed=0.5), cmds, s).verdict == Verdict.EXECUTE
+    # les planchers restent : trop incertain ou non adressé -> ignoré
+    assert decide(result("open_app", 0.3), cmds, s).verdict == Verdict.IGNORE
+    assert decide(result("open_app", 0.9, addressed=0.2), cmds, s).verdict == Verdict.IGNORE
+    # destructif, toujours confirmé, ou hors liste : confirmation maintenue
+    assert decide(result("empty_trash", 1.0), cmds, s).verdict == Verdict.CONFIRM
+    assert decide(result("open_app", 1.0, destructive=0.8), cmds, s).verdict == Verdict.CONFIRM
+    assert decide(result("web_task", 1.0), cmds, s).verdict == Verdict.CONFIRM
+    assert decide(result("quit_app", 0.6), cmds, s).verdict == Verdict.CONFIRM
+    assert decide(result("type_text", 0.6), cmds, s).verdict == Verdict.CONFIRM
 
 
 def test_threshold_is_configurable(config):
@@ -276,8 +295,10 @@ def test_runner_up_fallback_when_args_invalid(config):
     r = JevResult("open_app", {"open_app": 0.52, "open_website": 0.47, NONE: 0.01}, 0.49, 0.92, 0.04)
     launcher = make_launcher(config, {"ouvre YouTube": r})
     out = launcher.handle("ouvre YouTube")
-    assert out.command_id == "open_website" and out.decision.verdict == Verdict.CONFIRM
+    assert out.command_id == "open_website" and out.decision.verdict == Verdict.EXECUTE  # sans risque
     assert out.args.values["site"] == "https://www.youtube.com"
+    launcher.session.quiet = False  # mode sans confirmation désactivé dans le menu
+    assert launcher.handle("ouvre YouTube").decision.verdict == Verdict.CONFIRM
 
 
 def test_web_agent_guard_blocks_risky_labels():

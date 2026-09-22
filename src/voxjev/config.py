@@ -174,6 +174,10 @@ class Settings:
     app_aliases: dict[str, str] = field(default_factory=dict)
     none_option: dict = field(default_factory=dict)
     speak_answers: bool = True
+    # Mode sans confirmation : les commandes sans risque s'exécutent directement, même si Jev
+    # hésite un peu (au-dessus des planchers). Les actions destructives restent toujours confirmées.
+    quiet_mode: bool = True
+    safe_commands: tuple[str, ...] = ()
     speculate: bool = True  # transcription + appel Jev anticipés pendant l'appui
     hands_free: bool = False  # micro ouvert en continu, déclenché par le mot d'éveil
     wake_words: tuple[str, ...] = ("jarvis",)
@@ -472,6 +476,12 @@ def load_config(path: str | Path | None = None) -> Config:
         )
 
     _check_routines(commands)
+    unknown = set(settings.safe_commands) - set(commands)
+    if unknown:
+        raise ConfigError(f"settings.safe_commands : commandes inconnues {sorted(unknown)}")
+    risky = [c for c in settings.safe_commands if commands[c].destructive or commands[c].always_confirm]
+    if risky:
+        raise ConfigError(f"settings.safe_commands : {risky} sont destructives ou toujours confirmées")
     common = tuple(raw.get("common") or []) + tuple(r["id"] for r in routines if r["id"] not in (raw.get("common") or []))
     modes = {}
     for name, m in raw["modes"].items():
