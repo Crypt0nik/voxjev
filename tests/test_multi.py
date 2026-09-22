@@ -8,7 +8,10 @@ from voxjev.config import load_config
 from voxjev.context import Session
 from voxjev.jev_client import NONE, FakeJevClient, JevResult
 from voxjev.multi import MultiRunner, PlanOutcome, Splitter, parse_steps, split_rules
+from voxjev.candidates import Provider
 from voxjev.pipeline import Launcher
+
+OFFLINE = Provider(menu_reader=lambda pid: [], shortcut_lister=lambda: [])
 
 APPS = ("Google Chrome", "Safari", "Spotify", "Notion", "Ghostty", "Terminal", "Burp Suite Community Edition",
         "Calculator", "Finder")
@@ -33,7 +36,7 @@ def res(cmd, p=0.97, compound=0.05, destructive=0.05, addressed=0.95):
 
 def runner(config, responses, confirm=None, dry_run=False, mode="defaut"):
     ex = RecordingExecutor()
-    launcher = Launcher(config, FakeJevClient(responses=responses), Session(mode=mode, path=None),
+    launcher = Launcher(config, FakeJevClient(responses=responses), Session(mode=mode, path=None), provider=OFFLINE,
                         executor=None if dry_run else ex, confirmer=lambda *a: True,
                         frontmost=lambda: "Finder", apps=APPS, dry_run=dry_run)
     config.settings.__dict__  # (réglages lus tels quels)

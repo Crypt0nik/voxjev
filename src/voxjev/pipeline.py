@@ -9,6 +9,7 @@ from typing import Callable, Protocol
 from .actions import ActionError, Step, plan_command
 from .args import ArgResult, extract_args
 from .config import Config
+from .candidates import Provider
 from .context import Session, frontmost_app, installed_apps, journal
 from .decide import Decision, Verdict, decide
 from .jev_client import DecisionClient, JevError, JevResult, build_state
@@ -32,6 +33,8 @@ class Outcome:
     steps: list[Step] = field(default_factory=list)
     error: str | None = None
     timings: dict[str, float] = field(default_factory=dict)
+    messages: list[str] = field(default_factory=list)  # réponses à afficher / lire (agenda, question…)
+    candidates: dict = field(default_factory=dict, repr=False)  # candidats montrés à Jev (menus…)
 
     @property
     def command_id(self) -> str | None:
@@ -47,7 +50,7 @@ class Launcher:
     def __init__(self, config: Config, client: DecisionClient, session: Session, *,
                  executor: Executor | None = None, confirmer: Confirmer | None = None,
                  dry_run: bool = False, frontmost: Callable[[], str | None] = frontmost_app,
-                 apps: tuple[str, ...] | None = None):
+                 apps: tuple[str, ...] | None = None, provider: Provider | None = None):
         self.config = config
         self.client = client
         self.session = session
@@ -57,6 +60,33 @@ class Launcher:
         self._frontmost = frontmost
         self._apps = apps
         self.current: Outcome | None = None  # énoncé en cours (lu par les confirmateurs graphiques)
+        self.provider = provider or Provider()
+        self._warm_at = 0.0
+        if executor is not None:
+            if getattr(executor, "client", "absent") is None:
+                executor.client = client
+            if getattr(executor, "settings", "absent") is None:
+                executor.settings = config.settings
+
+    def sources_for(self, commands) -> set[str]:
+        """Sources de candidats utiles pour ces commandes (menus, Raccourcis, segments)."""
+        out = set()
+        for c in commands:
+            for spec in c.args.values():
+                if spec.type == "pick":
+                    out.add(spec.source)
+                elif spec.type == "text" and spec.span and spec.patterns:
+                    out.add("span")
+        return out
+
+    def prefetch(self) -> None:
+        """À l'appui sur la touche : lit les menus / Raccourcis et chauffe la connexion Jev pendant qu'on parle."""
+        self.provider.prefetch(self.sources_for(self.config.commands_for_mode(self.session.mode)))
+        if time.monotonic() - self._warm_at > 45 and hasattr(self.client, "warm"):
+            self._warm_at = time.monotonic()
+            import threading
+
+            threading.Thread(target=self.client.warm, daemon=True, name="voxjev-warm").start()
 
     @property
     def apps(self) -> tuple[str, ...]:
@@ -83,10 +113,17 @@ class Launcher:
         t0 = time.perf_counter()
         commands = self.config.commands_for_mode(mode)
         state = build_state(transcript, self._frontmost(), self.apps, mode, self.session.last_command)
+        cands = self.provider.gather(self.sources_for(commands), transcript)
+        out.candidates = cands
+        hints = {}
+        if cands.get("shortcut"):
+            names = ", ".join(c.label for c in cands["shortcut"][:40])
+            hints = {c.id: f"raccourcis de l'utilisateur : {names}" for c in commands
+                     if any(a.type == "pick" and a.source == "shortcut" for a in c.args.values())}
         out.timings["context_ms"] = (time.perf_counter() - t0) * 1000
 
         try:
-            out.result = self.client.evaluate(state, commands, s.none_option)
+            out.result = self.client.evaluate(state, commands, s.none_option, picks=cands or None, hints=hints or None)
         except JevError as exc:
             out.status, out.error = "error", str(exc)
             return out
@@ -98,7 +135,8 @@ class Launcher:
 
         cmd = out.decision.command
         assert cmd is not None
-        out.args = extract_args(cmd, transcript, self.config, self.apps)
+        picks = out.result.picks
+        out.args = extract_args(cmd, transcript, self.config, self.apps, picks, cands)
         if not out.args.ok:
             # Repli : la 2e option de Jev, si elle est proche et que SES arguments sont valides
             # (« ouvre YouTube » : open_app 0,52 sans app installée -> open_website 0,47).
@@ -107,7 +145,7 @@ class Launcher:
                 alt = by_id.get(alt_id)
                 if alt is None or alt_p < s.fallback_min_p:
                     continue
-                alt_args = extract_args(alt, transcript, self.config, self.apps)
+                alt_args = extract_args(alt, transcript, self.config, self.apps, picks, cands)
                 if alt_args.ok:
                     reason = f"repli sur la 2e option ({alt_id} p={alt_p:.2f}) : {cmd.id} sans argument valide"
                     out.decision = Decision(Verdict.CONFIRM, alt, reason, destructive=alt.destructive,
@@ -117,16 +155,55 @@ class Launcher:
         if not out.args.ok:
             out.status, out.error = "error", f"argument(s) manquant(s) pour {cmd.id} : {', '.join(out.args.missing)}"
             return out
+        if out.args.destructive and out.decision.verdict == Verdict.EXECUTE:
+            out.decision = Decision(Verdict.CONFIRM, cmd, "élément au nom destructeur", destructive=True,
+                                    code="destructive")
         try:
             if cmd.action.get("type") == "undo":
                 out.steps = self._plan_undo(out)
             else:
-                out.steps = plan_command(cmd, out.args.values, self.config, self.apps)
+                out.steps = plan_command(cmd, out.args.values, self.config, self.apps, data=out.args.data)
+            out.steps = self._resolve(out, out.steps)
         except ActionError as exc:
             out.status, out.error = "error", str(exc)
             return out
         out.status = "planned"
         return out
+
+    def _resolve(self, out: Outcome, steps: list[Step]) -> list[Step]:
+        """Étapes qui demandent un 2e choix de Jev (fichier, souvenir), faites au moment du plan
+        pour que la confirmation montre le fichier / le souvenir retenu."""
+        s = self.config.settings
+        resolved = []
+        for step in steps:
+            if step.kind == "file_open":
+                from .files import resolve
+
+                hit, p, hits = resolve(self.client, out.transcript, step.argv[0], s.pick_min_p)
+                if hit is None:
+                    raise ActionError(f"aucun fichier trouvé pour « {step.argv[0]} »" if not hits
+                                      else f"{len(hits)} fichiers possibles, aucun ne correspond clairement")
+                reveal = len(step.argv) > 1
+                resolved.append(Step("run", ("open", "-R", hit.path) if reveal else ("open", hit.path),
+                                     label=f"{'Montrer' if reveal else 'Ouvrir'} {hit.name} ({hit.parent})"))
+                out.args.display["fichier"] = hit.name
+                if p < s.threshold and out.decision.verdict == Verdict.EXECUTE:
+                    out.decision = Decision(Verdict.CONFIRM, out.decision.command,
+                                            f"fichier incertain (p={p:.2f})", code="medium_p")
+            elif step.kind in ("memory_ask", "memory_forget"):
+                from .memory import Memory
+
+                fact, p = Memory().find(self.client, step.argv[0], s.pick_min_p)
+                if fact is None:
+                    raise ActionError("je n'ai rien retenu à ce sujet")
+                if step.kind == "memory_ask":
+                    resolved.append(Step("say", (f"Vous m'avez dit : {fact}",), label="Souvenir"))
+                else:
+                    resolved.append(Step("memory_forget", (fact,), label=f"Oublier « {fact[:60]} »"))
+                    out.args.display["souvenir"] = fact
+            else:
+                resolved.append(step)
+        return resolved
 
     def _plan_undo(self, out: Outcome):
         """« annule ça » : rejoue l'action inverse déclarée (`undo:`) de la dernière commande."""
@@ -165,7 +242,7 @@ class Launcher:
         t1 = time.perf_counter()
         try:
             assert self.executor is not None
-            self.executor.run(out.steps)
+            out.messages = list(self.executor.run(out.steps) or [])
         except ActionError as exc:
             out.status, out.error = "error", str(exc)
             return out

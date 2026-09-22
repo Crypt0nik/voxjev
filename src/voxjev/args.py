@@ -65,6 +65,14 @@ def app_candidates(installed: tuple[str, ...], aliases: dict[str, str],
 class ArgResult:
     values: dict[str, str] = field(default_factory=dict)
     missing: list[str] = field(default_factory=list)
+    display: dict[str, str] = field(default_factory=dict)  # version lisible (« demain à 18 h 00 »)
+    data: dict[str, tuple] = field(default_factory=dict)  # ex. chemin d'un élément de menu
+    destructive: bool = False  # un candidat choisi porte un nom destructeur
+    sources: dict[str, str] = field(default_factory=dict)  # nom -> "regex" | "jev" (segment choisi par Jev)
+
+    @property
+    def shown(self) -> dict[str, str]:
+        return {**self.values, **self.display}
 
     @property
     def ok(self) -> bool:
@@ -79,19 +87,59 @@ def _capture(spec: ArgSpec, text: str) -> str | None:
     return None
 
 
-def extract_args(command: Command, transcript: str, config: Config,
-                 installed: tuple[str, ...]) -> ArgResult:
+def _jev_pick(source: str, picks: dict, cands: dict, min_p: float):
+    idx, p = picks.get(source, (None, 0.0))
+    pool = cands.get(source) or []
+    if idx is None or p < min_p or not 0 <= idx < len(pool):
+        return None
+    return pool[idx]
+
+
+def extract_args(command: Command, transcript: str, config: Config, installed: tuple[str, ...],
+                 picks: dict | None = None, cands: dict | None = None) -> ArgResult:
+    """``picks``/``cands`` : choix de Jev parmi des candidats réels (menus, Raccourcis, segments)."""
+    from .when import format_duration, format_when, parse_duration, parse_when
+
     s = config.settings
+    picks, cands = picks or {}, cands or {}
     text = normalize(transcript, s.strip_phrases)
     result = ArgResult()
     for name, spec in command.args.items():
-        span = _capture(spec, text)
+        source_text = text
+        if spec.type == "text" and spec.strip_when:
+            w = parse_when(text)
+            source_text = w.rest if w else text
+        span = _capture(spec, source_text)
         value: str | None = None
         if spec.type == "text":
+            if not span and spec.span and spec.patterns:
+                chosen = _jev_pick("span", picks, cands, s.pick_min_p)
+                if chosen is not None:
+                    span = chosen.value
+                    if spec.strip_when and (w := parse_when(span)):
+                        span = w.rest
+                    result.sources[name] = "jev"
             if span:
                 for pattern, replacement in spec.rewrite:
                     span = pattern.sub(replacement, span)
-                value = span[:MAX_TEXT_LEN]
+                value = span.strip(_EDGE_PUNCT)[:MAX_TEXT_LEN]
+                result.sources.setdefault(name, "regex")
+        elif spec.type == "pick":
+            chosen = _jev_pick(spec.source, picks, cands, s.pick_min_p)
+            if chosen is not None:
+                value = chosen.value
+                result.data[name] = chosen.data
+                result.destructive = result.destructive or chosen.destructive
+        elif spec.type == "duration":
+            seconds = parse_duration(text)
+            if seconds:
+                value = str(seconds)
+                result.display[name] = format_duration(seconds)
+        elif spec.type == "when":
+            w = parse_when(text)
+            if w:
+                value = w.at.strftime("%Y-%m-%dT%H:%M")
+                result.display[name] = format_when(w.at)
         elif spec.type == "app":
             cands = app_candidates(installed, s.app_aliases, spec.choices)
             value = best_alias_match(span, cands) if span else None

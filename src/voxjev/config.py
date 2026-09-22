@@ -27,9 +27,61 @@ ACTION_TYPES = {
     "spotify",
     "web_task",
     "undo",
+    # quotidien
+    "menu",           # élément de menu de l'app au premier plan (choisi par Jev parmi les menus lus)
+    "type_text",      # saisie de texte au clavier (jamais dans un terminal)
+    "keycombo",       # raccourci clavier (grammaire stricte : cmd+shift+t, code:121…)
+    "timer",          # minuteur
+    "reminder",       # rappel (app Rappels)
+    "calendar_add",   # événement (app Calendrier)
+    "calendar_read",  # lecture de l'agenda d'un jour
+    "note_add",       # note dictée (app Notes)
+    "mail_draft",     # brouillon d'e-mail visible, jamais envoyé
+    "info",           # heure, date, batterie, minuteurs
+    "routine",        # enchaînement de commandes aux arguments figés
+    "file_open",      # fichier trouvé par Spotlight, choisi par Jev
+    "memory_add",     # mémoire personnelle locale
+    "memory_ask",
+    "memory_forget",
+    "mail_triage",    # quels mails non lus demandent une action ?
+    "ask",            # question générale -> réponse courte d'un LLM (OpenRouter)
+    "desktop_task",   # agent bureau : plusieurs clics dans l'app au premier plan
 }
 SPOTIFY_OPS = {"play", "like", "search"}
-ARG_TYPES = {"app", "text", "enum", "mode"}
+ARG_TYPES = {"app", "text", "enum", "mode", "pick", "duration", "when"}
+PICK_SOURCES = {"menu", "shortcut"}
+INFO_TOPICS = {"time", "date", "battery", "timers"}
+# Champ d'action -> types d'argument acceptés. Le champ doit être exactement « {nom} ».
+TYPED_FIELDS = {
+    ("menu", "item"): {"pick"},
+    ("shortcut", "name"): {"pick"},
+    ("type_text", "text"): {"text"},
+    ("keycombo", "combo"): {"enum"},
+    ("timer", "seconds"): {"duration"},
+    ("timer", "label"): {"text"},
+    ("reminder", "title"): {"text"},
+    ("reminder", "when"): {"when"},
+    ("calendar_add", "title"): {"text"},
+    ("calendar_add", "when"): {"when"},
+    ("calendar_read", "when"): {"when"},
+    ("note_add", "body"): {"text"},
+    ("mail_draft", "to"): {"text"},
+    ("mail_draft", "body"): {"text"},
+    ("info", "what"): {"enum"},
+    ("file_open", "query"): {"text"},
+    ("memory_add", "fact"): {"text"},
+    ("memory_ask", "question"): {"text"},
+    ("memory_forget", "question"): {"text"},
+    ("ask", "question"): {"text"},
+    ("desktop_task", "goal"): {"text"},
+}
+REQUIRED_FIELDS = {
+    "menu": ("item",), "type_text": ("text",), "keycombo": ("combo",), "timer": ("seconds",),
+    "reminder": ("title",), "calendar_add": ("title", "when"), "note_add": ("body",),
+    "info": ("what",), "file_open": ("query",), "memory_add": ("fact",), "memory_ask": ("question",),
+    "memory_forget": ("question",), "ask": ("question",), "desktop_task": ("goal",),
+}
+COMBO_RE = re.compile(r"(?:(?:cmd|shift|alt|ctrl)\+)*(?:[a-z0-9,.;/'\[\]=`-]|code:\d{1,3})")
 # Champs d'action dans lesquels un placeholder `{arg}` est autorisé.
 TEMPLATED_FIELDS = {
     "open_app": {"app"},
@@ -61,6 +113,9 @@ class ArgSpec:
     path_segment: bool = False  # pour type text : encodage d'un segment de chemin
     rewrite: tuple[tuple[re.Pattern, str], ...] = ()  # pour type text : substitutions regex
     default: str = ""  # pour type enum : clé utilisée si rien ne correspond
+    source: str = ""  # pour type pick : d'où viennent les candidats (menu | shortcut)
+    strip_when: bool = False  # pour type text : retirer l'expression de date (« demain à 18h »)
+    span: bool = True  # pour type text : si les regex échouent, segment de la phrase choisi par Jev
 
 
 @dataclass(frozen=True)
@@ -106,6 +161,7 @@ class Settings:
     stt_prompt: str = ""
     min_record_seconds: float = 0.3
     confirm_timeout_seconds: int = 10
+    pick_min_p: float = 0.50  # choix de Jev parmi des candidats (menu, raccourci, segment) : p minimale
     fallback_min_p: float = 0.30  # 2e option de Jev tentée si la 1re n'a pas d'argument valide
     compound_threshold: float = 0.60  # Noul « plusieurs actions » au-dessus duquel on découpe
     max_plan_steps: int = 6
@@ -117,6 +173,9 @@ class Settings:
     strip_phrases: tuple[str, ...] = ()
     app_aliases: dict[str, str] = field(default_factory=dict)
     none_option: dict = field(default_factory=dict)
+    speak_answers: bool = True
+    voice: str = ""
+    terminal_apps: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -163,7 +222,7 @@ def _validate_action(action: dict, where: str, args: dict[str, ArgSpec], setting
             _validate_action(step, f"{where}.steps[{i}]", args, settings, mode_names)
         return
 
-    allowed_fields = TEMPLATED_FIELDS.get(kind, set())
+    allowed_fields = TEMPLATED_FIELDS.get(kind, set()) | {f for (k, f) in TYPED_FIELDS if k == kind}
     for key, value in action.items():
         if key == "type":
             continue
@@ -180,6 +239,48 @@ def _validate_action(action: dict, where: str, args: dict[str, ArgSpec], setting
             if key == "args" and used and v != f"{{{next(iter(used))}}}":
                 raise ConfigError(f"{where}: un argument AppleScript doit être exactement '{{nom}}'")
 
+    for field_name in REQUIRED_FIELDS.get(kind, ()):
+        if action.get(field_name) in (None, ""):
+            raise ConfigError(f"{where}: champ {field_name!r} requis pour {kind}")
+    for (k, field_name), accepted in TYPED_FIELDS.items():
+        value = action.get(field_name)
+        if k != kind or not isinstance(value, str):
+            continue
+        used = _placeholders(value)
+        if not used:
+            if kind == "keycombo" and not COMBO_RE.fullmatch(value):
+                raise ConfigError(f"{where}: raccourci clavier invalide {value!r}")
+            if kind == "info" and value not in INFO_TOPICS:
+                raise ConfigError(f"{where}: info doit être l'un de {sorted(INFO_TOPICS)}")
+            if kind in ("menu", "timer", "reminder", "calendar_add", "file_open", "desktop_task", "ask"):
+                raise ConfigError(f"{where}: {field_name!r} doit venir d'un argument")
+            continue
+        name = next(iter(used))
+        if value != f"{{{name}}}" or args[name].type not in accepted:
+            raise ConfigError(f"{where}: {field_name!r} doit être exactement {{arg}} de type {sorted(accepted)}")
+        spec = args[name]
+        if spec.type == "pick" and spec.source != {"menu": "menu", "shortcut": "shortcut"}[kind]:
+            raise ConfigError(f"{where}: l'argument {name!r} doit avoir source: {kind}")
+        if kind == "keycombo":
+            bad = [v.get("value") for v in spec.values.values() if not COMBO_RE.fullmatch(str(v.get("value", "")))]
+            if bad:
+                raise ConfigError(f"{where}: raccourcis invalides dans l'enum {name!r} : {bad}")
+        if kind == "info":
+            bad = [v.get("value") for v in spec.values.values() if v.get("value") not in INFO_TOPICS]
+            if bad:
+                raise ConfigError(f"{where}: sujets inconnus dans l'enum {name!r} : {bad}")
+    if kind == "type_text" and not isinstance(action.get("submit", False), bool):
+        raise ConfigError(f"{where}: 'submit' doit être true/false")
+    if kind == "routine":
+        steps = action.get("steps") or []
+        if not steps or len(steps) > 12:
+            raise ConfigError(f"{where}: une routine a 1 à 12 étapes")
+        for i, st in enumerate(steps):
+            if not isinstance(st, dict) or not (set(st) <= {"run", "with"} and "run" in st or set(st) == {"wait"}):
+                raise ConfigError(f"{where}.steps[{i}]: attendu {{run: id, with: {{…}}}} ou {{wait: secondes}}")
+            if "wait" in st and not (isinstance(st["wait"], (int, float)) and 0 < st["wait"] <= 30):
+                raise ConfigError(f"{where}.steps[{i}]: wait entre 0 et 30 s")
+        return  # les commandes référencées sont vérifiées une fois toutes chargées
     if kind in ("open_app", "quit_app") and not action.get("app"):
         raise ConfigError(f"{where}: champ 'app' requis")
     if kind == "open_url":
@@ -204,8 +305,8 @@ def _validate_action(action: dict, where: str, args: dict[str, ArgSpec], setting
         bad = set(action.get("modifiers", [])) - KEY_MODIFIERS
         if bad:
             raise ConfigError(f"{where}: modificateurs inconnus {bad}")
-    if kind == "shortcut" and (not isinstance(action.get("name"), str) or _placeholders(action["name"])):
-        raise ConfigError(f"{where}: 'name' de raccourci figé requis")
+    if kind == "shortcut" and not isinstance(action.get("name"), str):
+        raise ConfigError(f"{where}: 'name' de raccourci requis")
     if kind == "exec":
         argv = action.get("argv")
         if not isinstance(argv, list) or not argv or not all(isinstance(a, str) for a in argv):
@@ -255,6 +356,8 @@ def _parse_args(raw: dict, where: str) -> dict[str, ArgSpec]:
             rewrite.append((re.compile(rule[0], re.IGNORECASE), rule[1]))
         if kind == "enum" and not spec.get("values"):
             raise ConfigError(f"{where}.args.{name}: enum sans 'values'")
+        if kind == "pick" and spec.get("source") not in PICK_SOURCES:
+            raise ConfigError(f"{where}.args.{name}: pick exige source parmi {sorted(PICK_SOURCES)}")
         out[name] = ArgSpec(
             name=name,
             type=kind,
@@ -265,8 +368,40 @@ def _parse_args(raw: dict, where: str) -> dict[str, ArgSpec]:
             path_segment=bool(spec.get("path_segment", False)),
             rewrite=tuple(rewrite),
             default=str(spec.get("default", "")),
+            source=str(spec.get("source", "")),
+            strip_when=bool(spec.get("strip_when", False)),
+            span=bool(spec.get("span", True)),
         )
     return out
+
+
+def _check_routines(commands: dict[str, Command]) -> None:
+    """Étapes de routine : commandes existantes, arguments déclarés ; destructive si une étape l'est."""
+    for cid, cmd in list(commands.items()):
+        if cmd.action.get("type") != "routine":
+            continue
+        destructive = cmd.destructive
+        for i, st in enumerate(cmd.action["steps"]):
+            if "wait" in st:
+                continue
+            where = f"routine {cid}.steps[{i}]"
+            target = commands.get(st["run"])
+            if target is None:
+                raise ConfigError(f"{where}: commande inconnue {st['run']!r}")
+            if target.action.get("type") in ("routine", "undo"):
+                raise ConfigError(f"{where}: {target.action['type']} interdit dans une routine")
+            given = st.get("with") or {}
+            unknown = set(given) - set(target.args)
+            if unknown:
+                raise ConfigError(f"{where}: arguments inconnus {sorted(unknown)}")
+            missing = [n for n, a in target.args.items() if not a.optional and n not in given]
+            if missing:
+                raise ConfigError(f"{where}: arguments manquants {missing}")
+            if not all(isinstance(v, (str, int, float)) for v in given.values()):
+                raise ConfigError(f"{where}: les valeurs de 'with' doivent être du texte")
+            destructive = destructive or target.destructive
+        if destructive != cmd.destructive:
+            commands[cid] = Command(**{**cmd.__dict__, "destructive": destructive})
 
 
 def load_config(path: str | Path | None = None) -> Config:
@@ -294,7 +429,13 @@ def load_config(path: str | Path | None = None) -> Config:
         raise ConfigError("au moins un mode est requis")
 
     commands: dict[str, Command] = {}
-    for i, c in enumerate(raw.get("commands") or []):
+    routines = []
+    for r in raw.get("routines") or []:  # sucre syntaxique : une routine = une commande de type routine
+        r = dict(r)
+        r.setdefault("destructive", False)
+        r["action"] = {"type": "routine", "steps": r.pop("steps", None)}
+        routines.append(r)
+    for i, c in enumerate([*(raw.get("commands") or []), *routines]):
         cid = c.get("id")
         where = f"commands[{i}] ({cid})"
         if not cid or not re.fullmatch(r"[a-z][a-z0-9_]*", cid):
@@ -326,7 +467,8 @@ def load_config(path: str | Path | None = None) -> Config:
             undo=c.get("undo"),
         )
 
-    common = tuple(raw.get("common") or [])
+    _check_routines(commands)
+    common = tuple(raw.get("common") or []) + tuple(r["id"] for r in routines if r["id"] not in (raw.get("common") or []))
     modes = {}
     for name, m in raw["modes"].items():
         m = m or {}

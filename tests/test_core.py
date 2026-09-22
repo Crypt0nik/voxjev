@@ -12,7 +12,10 @@ from voxjev.config import ConfigError, Settings, load_config
 from voxjev.context import Session
 from voxjev.decide import Verdict, decide
 from voxjev.jev_client import NONE, FakeJevClient, JevError, JevResult, build_questions, build_state
+from voxjev.candidates import Provider
 from voxjev.pipeline import Launcher
+
+OFFLINE = Provider(menu_reader=lambda pid: [], shortcut_lister=lambda: [])
 
 APPS = ("Google Chrome", "Safari", "Spotify", "Notion", "Visual Studio Code", "Ghostty", "Terminal",
         "Burp Suite Community Edition", "Mail", "Calendar", "Notes", "Finder")
@@ -29,7 +32,7 @@ def result(cmd: str, p: float = 0.95, addressed: float = 0.95, destructive: floa
 
 def make_launcher(config, responses=None, executor=None, confirmer=None, mode="defaut", tmp_path=None):
     session = Session(mode=mode, path=(tmp_path / "state.json") if tmp_path else None)
-    return Launcher(config, FakeJevClient(responses=responses or {}), session, executor=executor,
+    return Launcher(config, FakeJevClient(responses=responses or {}), session, executor=executor, provider=OFFLINE,
                     confirmer=confirmer, frontmost=lambda: "Ghostty", apps=APPS)
 
 

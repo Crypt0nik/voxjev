@@ -492,15 +492,16 @@ class HUD:
         cmd = out.decision.command if out.decision else None
         p = r.p_command if r else 0.0
         if cmd:
-            self.command.setStringValue_(cmd.short(out.args.values if out.args else None))
+            self.command.setStringValue_(cmd.short(out.args.shown if out.args else None))
         elif out.decision:
             self.command.setStringValue_(explain(out.decision, p, dry_run))
         else:
             self.command.setStringValue_(out.error or "")
         self.command.setHidden_(False)
         details = []
-        if out.args and out.args.values:
-            details.append("   ·   ".join(f"{k} : {v}" for k, v in out.args.values.items()))
+        details += out.messages
+        if out.args and out.args.values and not out.messages:
+            details.append("   ·   ".join(f"{k} : {v}" for k, v in out.args.shown.items()))
         if out.status == "cancelled":
             details.append("Annulé — rien n'a été exécuté.")
         elif out.decision and cmd:
@@ -550,7 +551,10 @@ class HUD:
                   "cancelled": "Annulé", "error": "Échec"}
         self.dot.setTextColor_(PHASES[phase][0])
         self.status.setStringValue_(titles.get(out.status, out.status))
-        self._show(STATUS_STYLE[key][2])
+        hide = STATUS_STYLE[key][2]
+        if out.messages:  # une réponse (agenda, question…) reste le temps d'être lue
+            hide = max(hide, min(20.0, 4.0 + sum(len(m) for m in out.messages) / 18))
+        self._show(hide)
 
     def ask_confirm(self, out: Outcome, s, timeout: int, hotkey: str) -> None:
         self._reset_content()
@@ -594,7 +598,8 @@ class HUD:
             mark = self.PLAN_MARKS.get(o.status, "•")
             cmd = o.decision.command if o.decision else None
             if cmd and o.status != "ignored":
-                lines.append(f"{mark} {i}. {cmd.short(o.args.values if o.args else None)}")
+                lines.append(f"{mark} {i}. {cmd.short(o.args.shown if o.args else None)}")
+                lines += [f"      {m}" for m in o.messages]
             else:
                 lines.append(f"{mark} {i}. « {o.transcript} » : pas une commande, ignoré")
             if o.error:
@@ -669,6 +674,9 @@ class Engine(threading.Thread):
             warm = None
         executor = SubprocessExecutor(progress=lambda m: (print(f"  {m}", flush=True),
                                                          self.ui(hud.phase, "thinking", m, 0, True)))
+        executor.settings = self.config.settings
+        executor.on_timer = lambda text: (self.sounds.play("success"),
+                                          self.ui(hud.show_message, "Minuteur", text, "done", 8.0))
         self.launcher = Launcher(self.config, self.client, self.session, executor=executor,
                                  confirmer=self._confirm, dry_run=self.dry_run)
         self.runner = MultiRunner(self.launcher, build_splitter(s), confirm_plan=self._confirm_plan)
@@ -975,6 +983,8 @@ class GuiApp:
     def _on_press(self) -> None:
         """Appelé depuis le thread clavier : tout passe par callAfter."""
         self.engine.sounds.play("listening")
+        if self.engine.launcher is not None:  # menus, Raccourcis, connexion Jev : prêts avant la fin de la phrase
+            self.engine.launcher.prefetch()
         AppHelper.callAfter(self.set_icon, "listening")
         AppHelper.callAfter(self._listening_ui)
 

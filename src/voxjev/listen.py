@@ -35,13 +35,13 @@ def run_listener(config: Config, client, session: Session, *, dry_run: bool = Fa
     print(f"  {len(apps)} apps installées indexées")
 
     launcher = Launcher(config, client, session,
-                        executor=None if dry_run else SubprocessExecutor(),
+                        executor=None if dry_run else SubprocessExecutor(settings=s),
                         confirmer=dialog_confirmer(s.confirm_timeout_seconds), dry_run=dry_run)
     from .executor import dialog_plan_confirmer
     from .multi import MultiRunner, build_splitter
 
     runner = MultiRunner(launcher, build_splitter(s), confirm_plan=dialog_plan_confirmer(s.confirm_timeout_seconds))
-    ptt = PushToTalk(s.hotkey, on_start=lambda: sounds.play("listening"))
+    ptt = PushToTalk(s.hotkey, on_start=lambda: (sounds.play("listening"), launcher.prefetch()))
     ptt.start()
     print(f"Maintenez « {s.hotkey} » pour parler (Ctrl+C pour quitter)."
           + ("  [dry-run : rien n'est exécuté]" if dry_run else ""))

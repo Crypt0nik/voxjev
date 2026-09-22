@@ -55,7 +55,13 @@ settings:
     - /System/Applications
     - /System/Applications/Utilities
     - ~/Applications
-  exec_allowlist: [pmset]
+  exec_allowlist: [pmset, networksetup]
+  # Retours : les réponses (agenda, heure, questions…) sont lues à voix haute (say).
+  speak_answers: true
+  voice: ""                 # voix de `say` (vide = voix du système ; ex. Thomas, Amélie)
+  pick_min_p: 0.50           # choix de Jev parmi des candidats réels (menus, Raccourcis, segments, fichiers)
+  # Jamais de saisie dictée ni d'agent bureau dans ces apps (un texte dicté n'y devient pas une commande).
+  terminal_apps: [Terminal, iTerm2, Ghostty, Warp, kitty, Alacritty, WezTerm, Hyper, Tabby, Visual Studio Code, Cursor]
   # Formules de politesse retirées avant l'extraction des arguments.
   strip_phrases: ["s'il te plaît", "s'il te plait", "s'il vous plaît", "stp", "merci", "please"]
   # Noms parlés -> nom exact de l'app (uniquement si l'app est installée).
@@ -96,7 +102,7 @@ settings:
     examples:
       - "je pense qu'on devrait manger vers midi"
       - "tu as vu le match hier soir"
-      - "c'est quoi déjà la capitale de l'Australie"
+      - "il fait beau aujourd'hui hein"
       - "euh attends deux secondes"
 
 modes:
@@ -124,7 +130,11 @@ modes:
 # Commandes disponibles dans tous les modes.
 common: [open_app, quit_app, web_search, youtube_search, open_website, volume_up, volume_down,
          toggle_mute, play_pause, next_track, screenshot, lock_screen, sleep_display,
-         empty_trash, close_window, new_tab, switch_mode, spotify_play, spotify_like, spotify_search, web_task, undo_last]
+         empty_trash, close_window, new_tab, switch_mode, spotify_play, spotify_like, spotify_search, web_task, undo_last,
+         menu_item, run_shortcut, type_text, type_text_enter, key_shortcut, scroll, dark_mode, brightness_up,
+         brightness_down, wifi_off, wifi_on, set_timer, info, reminder_add, event_add, agenda_read, note_add,
+         mail_draft, mail_triage, open_file, reveal_file, memory_add, memory_ask, memory_forget, ask_question,
+         desktop_task]
 
 commands:
   # ---------------------------------------------------------------- apps
@@ -464,3 +474,368 @@ commands:
       type: sequence
       steps:
         - {type: keystroke, key: "n", modifiers: [command], app: Notes}
+
+  # ================================================================= quotidien
+  # ---------------------------------------------------------------- n'importe quelle app
+  - id: menu_item
+    label: "Menu : {item}"
+    description: "Cliquer une commande des menus de l'app au premier plan (Fichier, Édition, Présentation, Format…) : exporter, dupliquer, nouvelle fenêtre privée, afficher une barre latérale, zoomer… quand aucune commande plus précise ne convient"
+    examples: ["exporte en PDF", "ouvre une nouvelle fenêtre de navigation privée", "affiche la barre latérale", "duplique ce document", "mets le texte en gras"]
+    destructive: false
+    args:
+      item: {type: pick, source: menu}
+    action: {type: menu, item: "{item}"}
+
+  - id: run_shortcut
+    label: "Raccourci « {shortcut} »"
+    description: "Lancer un des Raccourcis de l'utilisateur (app Raccourcis de macOS)"
+    examples: ["lance le raccourci créer un code QR", "exécute mon raccourci Shazam", "fais le raccourci prix de l'ethereum"]
+    destructive: false
+    args:
+      shortcut: {type: pick, source: shortcut}
+    action: {type: shortcut, name: "{shortcut}"}
+
+  - id: type_text
+    label: "Taper « {text} »"
+    description: "Taper au clavier un texte dicté dans le champ ou le document actif (sans valider)"
+    examples: ["tape bonjour tout le monde", "écris je serai en retard de dix minutes", "saisis rendez-vous confirmé", "tape merci beaucoup"]
+    destructive: false
+    args:
+      text:
+        type: text
+        patterns:
+          - "^(?:tape|tapes|écris|ecris|saisis|dactylographie)\\s+(?:le texte\\s+|ceci\\s*:?\\s*)?(?P<text>.+)$"
+    action: {type: type_text, text: "{text}"}
+
+  - id: type_text_enter
+    label: "Taper « {text} » puis Entrée"
+    description: "Taper un texte dicté puis appuyer sur Entrée (envoyer un message dans une messagerie, valider une recherche)"
+    examples: ["tape salut ça va et envoie", "écris ok pour moi et appuie sur entrée", "tape météo Paris et valide"]
+    destructive: false
+    always_confirm: true
+    args:
+      text:
+        type: text
+        patterns:
+          - "^(?:tape|tapes|écris|ecris|saisis)\\s+(?P<text>.+?)\\s+(?:et|puis)\\s+(?:envoie|envoies|valide|valides|appuie sur entrée|fais entrée|entrée)$"
+    action: {type: type_text, text: "{text}", submit: true}
+
+  - id: key_shortcut
+    label: "Raccourci clavier : {combo}"
+    description: "Appuyer sur un raccourci clavier standard : copier, coller, couper, tout sélectionner, défaire la frappe (⌘Z), rétablir, enregistrer, rechercher dans la page, imprimer, recharger, page ou onglet précédent/suivant, rouvrir l'onglet fermé, zoom du texte, plein écran, Entrée, Échap, Tab, Spotlight"
+    examples: ["copie", "colle", "sélectionne tout", "enregistre", "recharge la page", "reviens à la page précédente", "rouvre l'onglet fermé", "appuie sur entrée", "fais échap", "ctrl z"]
+    destructive: false
+    args:
+      combo:
+        type: enum
+        values:
+          copy: {aliases: [copie, copier, copy], value: "cmd+c"}
+          paste: {aliases: [colle, coller, paste], value: "cmd+v"}
+          cut: {aliases: [coupe, couper, cut], value: "cmd+x"}
+          select_all: {aliases: [sélectionne tout, tout sélectionner, select all], value: "cmd+a"}
+          undo_typing: {aliases: [ctrl z, commande z, défais, défaire, annule la frappe, annuler la saisie], value: "cmd+z"}
+          redo: {aliases: [rétablis, rétablir, refais], value: "cmd+shift+z"}
+          save: {aliases: [enregistre, sauvegarde, sauvegarder, enregistrer], value: "cmd+s"}
+          find: {aliases: [cherche dans la page, rechercher dans la page, trouve dans la page, ctrl f], value: "cmd+f"}
+          print: {aliases: [imprime, imprimer], value: "cmd+p"}
+          reload: {aliases: [recharge, rafraîchis, actualise, reload], value: "cmd+r"}
+          back: {aliases: [page précédente, reviens en arrière sur la page, retour, précédent], value: "cmd+["}
+          forward: {aliases: [page suivante, avance, suivant], value: "cmd+]"}
+          prev_tab: {aliases: [onglet précédent, onglet de gauche], value: "cmd+shift+["}
+          next_tab: {aliases: [onglet suivant, onglet de droite], value: "cmd+shift+]"}
+          reopen_tab: {aliases: [rouvre l'onglet, rouvrir l'onglet fermé, onglet fermé], value: "cmd+shift+t"}
+          zoom_in: {aliases: [agrandis, zoom avant, plus gros, grossis], value: "cmd+="}
+          zoom_out: {aliases: [rétrécis, zoom arrière, plus petit], value: "cmd+-"}
+          zoom_reset: {aliases: [taille normale, zoom normal], value: "cmd+0"}
+          fullscreen: {aliases: [plein écran], value: "ctrl+cmd+f"}
+          hide: {aliases: [masque l'app, cache l'app, masquer], value: "cmd+h"}
+          minimize: {aliases: [réduis la fenêtre, minimise], value: "cmd+m"}
+          new_window: {aliases: [nouvelle fenêtre], value: "cmd+n"}
+          enter: {aliases: [entrée, valide, appuie sur entrée], value: "code:36"}
+          escape: {aliases: [échap, escape, echap], value: "code:53"}
+          tab: {aliases: [tabulation, tab], value: "code:48"}
+          spotlight: {aliases: [spotlight], value: "cmd+code:49"}
+    action: {type: keycombo, combo: "{combo}"}
+
+  - id: scroll
+    label: "Défilement : {direction}"
+    description: "Faire défiler la page ou le document (descendre, remonter, tout en haut, tout en bas)"
+    examples: ["descends", "fais défiler vers le bas", "remonte", "va tout en haut", "va tout en bas de la page"]
+    destructive: false
+    args:
+      direction:
+        type: enum
+        values:
+          top: {aliases: [tout en haut, en haut de la page, début], value: "code:115"}
+          bottom: {aliases: [tout en bas, en bas de la page, fin de la page], value: "code:119"}
+          up: {aliases: [remonte, monte, vers le haut, haut], value: "code:116"}
+          down: {aliases: [descends, descend, vers le bas, bas, défile], value: "code:121"}
+        default: down
+    action: {type: keycombo, combo: "{direction}"}
+
+  # ---------------------------------------------------------------- réglages système
+  - id: dark_mode
+    label: "Apparence : {theme}"
+    description: "Passer en mode sombre, en mode clair, ou basculer l'apparence de macOS"
+    examples: ["mets le mode sombre", "passe en mode clair", "change le thème"]
+    destructive: false
+    args:
+      theme:
+        type: enum
+        values:
+          dark: {aliases: [sombre, dark, nuit, noir], value: "dark"}
+          light: {aliases: [clair, light, jour, blanc], value: "light"}
+          toggle: {aliases: [change, bascule, inverse], value: "toggle"}
+        default: toggle
+    action:
+      type: applescript
+      script: |
+        on run argv
+        tell application "System Events" to tell appearance preferences
+        if item 1 of argv is "toggle" then set dark mode to not dark mode
+        if item 1 of argv is "dark" then set dark mode to true
+        if item 1 of argv is "light" then set dark mode to false
+        end tell
+        end run
+      args: ["{theme}"]
+    undo: {type: applescript, script: "tell application \"System Events\" to tell appearance preferences to set dark mode to not dark mode"}
+
+  - id: brightness_up
+    label: "Luminosité +"
+    description: "Augmenter la luminosité de l'écran"
+    examples: ["plus de lumière", "augmente la luminosité", "écran plus lumineux"]
+    destructive: false
+    action: {type: keycombo, combo: "code:144"}
+    undo: {type: keycombo, combo: "code:145"}
+
+  - id: brightness_down
+    label: "Luminosité −"
+    description: "Baisser la luminosité de l'écran"
+    examples: ["baisse la luminosité", "moins de lumière", "écran moins lumineux"]
+    destructive: false
+    action: {type: keycombo, combo: "code:145"}
+    undo: {type: keycombo, combo: "code:144"}
+
+  - id: wifi_off
+    label: "Couper le Wi-Fi"
+    description: "Désactiver le Wi-Fi"
+    examples: ["coupe le wifi", "désactive le wi-fi", "éteins le wifi"]
+    destructive: false
+    action: {type: exec, argv: [networksetup, -setairportpower, en0, "off"]}
+    undo: {type: exec, argv: [networksetup, -setairportpower, en0, "on"]}
+
+  - id: wifi_on
+    label: "Activer le Wi-Fi"
+    description: "Activer le Wi-Fi"
+    examples: ["active le wifi", "rallume le wi-fi", "remets le wifi"]
+    destructive: false
+    action: {type: exec, argv: [networksetup, -setairportpower, en0, "on"]}
+    undo: {type: exec, argv: [networksetup, -setairportpower, en0, "off"]}
+
+  # ---------------------------------------------------------------- temps, rappels, agenda
+  - id: set_timer
+    label: "Minuteur {duration}"
+    description: "Lancer un minuteur / compte à rebours d'une durée donnée"
+    examples: ["mets un minuteur de 10 minutes", "minuteur 3 minutes pour les pâtes", "préviens-moi dans une demi-heure", "compte à rebours de 90 secondes"]
+    destructive: false
+    args:
+      duration: {type: duration}
+      label:
+        type: text
+        optional: true
+        span: false
+        patterns:
+          - "\\bpour\\s+(?:les\\s+|le\\s+|la\\s+|l')?(?P<label>[^\\d].*)$"
+    action: {type: timer, seconds: "{duration}", label: "{label}"}
+
+  - id: info
+    label: "Info : {what}"
+    description: "Donner l'heure, la date du jour, le niveau de batterie ou le temps restant sur les minuteurs"
+    examples: ["quelle heure est-il", "on est quel jour", "il reste combien de batterie", "combien de temps reste-t-il sur le minuteur"]
+    destructive: false
+    args:
+      what:
+        type: enum
+        values:
+          time: {aliases: [heure, quelle heure], value: time}
+          date: {aliases: [quel jour, date, on est le combien, quel jour on est], value: date}
+          battery: {aliases: [batterie, charge, autonomie], value: battery}
+          timers: {aliases: [minuteur, minuteurs, compte à rebours], value: timers}
+    action: {type: info, what: "{what}"}
+
+  - id: reminder_add
+    label: "Rappel « {what} » {when}"
+    description: "Créer un rappel (app Rappels), avec ou sans date : « rappelle-moi de… »"
+    examples: ["rappelle-moi d'appeler Paul demain à 18h", "rappelle-moi de sortir le linge dans 20 minutes", "ajoute un rappel acheter du pain"]
+    destructive: false
+    args:
+      what:
+        type: text
+        strip_when: true
+        patterns:
+          - "rappelle[- ]moi\\s+(?:de\\s+|d'|qu'|que\\s+)?(?P<what>.+)$"
+          - "(?:ajoute|crée|cree|mets|créer)\\s+(?:moi\\s+)?un\\s+rappel\\s+(?:pour\\s+|de\\s+|d'|:\\s*)?(?P<what>.+)$"
+          - "^rappel\\s*:?\\s+(?P<what>.+)$"
+      when: {type: when, optional: true}
+    action: {type: reminder, title: "{what}", when: "{when}"}
+
+  - id: event_add
+    label: "Agenda : « {title} » {when}"
+    description: "Ajouter un rendez-vous, une réunion ou un événement daté à l'agenda (app Calendrier)"
+    examples: ["ajoute un rendez-vous chez le dentiste mardi à 14h", "mets une réunion avec l'équipe demain à 10h", "crée un événement anniversaire de Léa le 12 octobre"]
+    destructive: false
+    args:
+      title:
+        type: text
+        strip_when: true
+        patterns:
+          - "(?:ajoute|crée|cree|mets|note|programme|planifie|cale)\\s+(?:moi\\s+)?(?:un\\s+|une\\s+)?(?:événement\\s+|évènement\\s+)?(?P<title>(?:rendez-vous|rdv|réunion|reunion|appel|call|déjeuner|dîner|diner|cours|anniversaire|entretien|séance|seance|match|visio)?.+?)(?:\\s+(?:à|dans)\\s+(?:l'|mon\\s+)?(?:agenda|calendrier))?$"
+      when: {type: when}
+    action: {type: calendar_add, title: "{title}", when: "{when}", minutes: 60}
+
+  - id: agenda_read
+    label: "Agenda {when}"
+    description: "Lire les événements de l'agenda d'un jour (aujourd'hui par défaut) : « qu'est-ce que j'ai demain ? »"
+    examples: ["qu'est-ce que j'ai aujourd'hui", "c'est quoi mon programme demain", "lis-moi mon agenda de lundi", "j'ai des rendez-vous cet après-midi"]
+    destructive: false
+    args:
+      when: {type: when, optional: true}
+    action: {type: calendar_read, when: "{when}"}
+
+  - id: note_add
+    label: "Note : « {body} »"
+    description: "Écrire une note dictée dans l'app Notes"
+    examples: ["note que je dois acheter des piles", "prends en note le code wifi de l'hôtel est 4521", "écris dans mes notes idée de cadeau pour Léa"]
+    destructive: false
+    args:
+      body:
+        type: text
+        patterns:
+          - "^(?:note|notes|prends note|prends en note|écris dans mes notes|ajoute à mes notes|ajoute dans mes notes)\\s+(?:que\\s+|qu'|:\\s*)?(?P<body>.+)$"
+    action: {type: note_add, body: "{body}"}
+
+  - id: mail_draft
+    label: "Brouillon d'e-mail {to}"
+    description: "Rédiger un brouillon d'e-mail à partir d'une consigne dictée (jamais envoyé automatiquement)"
+    examples: ["écris un mail à Paul pour lui dire que je serai en retard", "prépare un e-mail à Marie pour la remercier", "rédige un mail au propriétaire pour signaler la fuite"]
+    destructive: false
+    args:
+      to:
+        type: text
+        optional: true
+        span: false
+        patterns:
+          - "(?:mail|e-mail|email|courriel|message)\\s+(?:à|a|pour)\\s+(?!l'|la\\b|le\\b|les\\b|mon\\b|ma\\b|mes\\b)(?P<to>[\\w-]+)"
+      body:
+        type: text
+        patterns: ["^(?P<body>.+)$"]
+    action: {type: mail_draft, to: "{to}", body: "{body}"}
+
+  - id: mail_triage
+    label: "Tri des mails non lus"
+    description: "Passer en revue les e-mails non lus et dire lesquels demandent une action ou sont importants"
+    examples: ["quels mails demandent une action", "trie mes mails", "j'ai des mails importants", "est-ce que j'ai des mails urgents"]
+    destructive: false
+    action: {type: mail_triage}
+
+  # ---------------------------------------------------------------- fichiers
+  - id: open_file
+    label: "Ouvrir le fichier {name}"
+    description: "Retrouver un fichier ou document de l'utilisateur par son nom et l'ouvrir"
+    examples: ["ouvre le fichier rapport de stage", "ouvre mon CV", "ouvre la présentation du projet voxjev", "retrouve le PDF de la facture EDF"]
+    destructive: false
+    args:
+      name:
+        type: text
+        patterns:
+          - "(?:ouvre|affiche|trouve|retrouve|cherche)\\s+(?:-?moi\\s+)?(?:le\\s+|la\\s+|les\\s+|l'|mon\\s+|ma\\s+|mes\\s+)?(?P<name>(?:fichier|document|doc|pdf|présentation|presentation|tableur|feuille|image|photo|cv|facture|contrat).*)$"
+    action: {type: file_open, query: "{name}"}
+
+  - id: reveal_file
+    label: "Montrer le fichier {name} dans le Finder"
+    description: "Retrouver un fichier et le montrer dans le Finder (sans l'ouvrir)"
+    examples: ["montre-moi où est le fichier rapport de stage", "affiche le dossier de ma facture EDF dans le Finder", "révèle mon CV dans le Finder"]
+    destructive: false
+    args:
+      name:
+        type: text
+        patterns:
+          - "(?:montre|affiche|révèle|revele)\\s*(?:-?moi\\s+)?(?:où\\s+est\\s+)?(?:le\\s+|la\\s+|l'|mon\\s+|ma\\s+)?(?:dossier\\s+de\\s+(?:ma\\s+|mon\\s+|la\\s+|le\\s+)?)?(?P<name>.+?)(?:\\s+dans\\s+le\\s+finder)?$"
+    action: {type: file_open, query: "{name}", reveal: true}
+
+  # ---------------------------------------------------------------- mémoire et questions
+  - id: memory_add
+    label: "Retenir « {fact} »"
+    description: "Retenir une information personnelle pour plus tard (« retiens que… »)"
+    examples: ["retiens que mon dentiste c'est le docteur Martin", "souviens-toi que le code du portail est 1234", "mémorise que Léa est allergique aux noix"]
+    destructive: false
+    args:
+      fact:
+        type: text
+        patterns:
+          - "(?:retiens|souviens[- ]toi|mémorise|memorise|garde en mémoire)\\s+(?:bien\\s+)?(?:que\\s+|qu'|:\\s*)?(?P<fact>.+)$"
+    action: {type: memory_add, fact: "{fact}"}
+
+  - id: memory_ask
+    label: "Mémoire : {question}"
+    description: "Retrouver une information personnelle que l'utilisateur m'a demandé de retenir"
+    examples: ["c'est qui mon dentiste déjà", "qu'est-ce que je t'avais dit sur le code du portail", "Léa est allergique à quoi déjà", "redis-moi le nom du garagiste"]
+    destructive: false
+    args:
+      question: {type: text, span: false, patterns: ["^(?P<question>.+)$"]}
+    action: {type: memory_ask, question: "{question}"}
+
+  - id: memory_forget
+    label: "Oublier un souvenir"
+    description: "Effacer une information retenue (« oublie ce que je t'ai dit sur… »)"
+    examples: ["oublie le code du portail", "efface ce que je t'ai dit sur mon dentiste"]
+    destructive: true
+    args:
+      question: {type: text, span: false, patterns: ["^(?P<question>.+)$"]}
+    action: {type: memory_forget, question: "{question}"}
+
+  - id: ask_question
+    label: "Question : {question}"
+    description: "Répondre à une question de culture générale, de définition, de calcul ou d'explication adressée à l'assistant"
+    examples: ["dis-moi c'est quoi la capitale du Pérou", "explique-moi ce qu'est une injection SQL", "combien font 17 fois 23", "c'est quoi la différence entre TCP et UDP"]
+    destructive: false
+    args:
+      question:
+        type: text
+        span: false
+        patterns:
+          - "^(?:dis[- ]moi|explique[- ]moi|réponds[- ]moi|question)\\s*:?\\s*(?P<question>.+)$"
+          - "^(?P<question>.+)$"
+    action: {type: ask, question: "{question}"}
+
+  # ---------------------------------------------------------------- agent bureau
+  - id: desktop_task
+    label: "Agent bureau : « {goal} »"
+    description: "Tâche en plusieurs clics et saisies dans l'app au premier plan (fenêtres, boutons, champs, cases à cocher), quand aucune commande simple ne suffit"
+    examples: ["dans cette fenêtre coche la case ne plus demander et valide", "dans les réglages de l'app active les notifications", "remplis le champ nom avec Arthur et clique sur continuer"]
+    destructive: false
+    always_confirm: true
+    args:
+      goal: {type: text, span: false, patterns: ["^(?P<goal>.+)$"]}
+    action: {type: desktop_task, goal: "{goal}"}
+
+# Routines : une phrase déclenche plusieurs commandes aux arguments FIGÉS (aucun appel Jev par étape).
+# Étapes : {run: id_de_commande, with: {argument: valeur}} ou {wait: secondes}.
+routines:
+  - id: routine_matin
+    label: "Routine du matin"
+    description: "Lancer la routine du matin / commencer la journée"
+    examples: ["lance ma routine du matin", "on commence la journée", "bonjour, démarre ma journée"]
+    steps:
+      - {run: info, with: {what: date}}
+      - {run: agenda_read, with: {when: "aujourd'hui"}}
+      - {run: open_app, with: {app: Mail}}
+      - {run: open_app, with: {app: Calendar}}
+
+  - id: routine_concentration
+    label: "Routine concentration"
+    description: "Se mettre en mode concentration / focus pour travailler"
+    examples: ["mode concentration", "je me concentre", "lance la routine focus"]
+    steps:
+      - {run: switch_mode, with: {mode: travail}}
+      - {run: set_timer, with: {duration: "25 minutes", label: "pomodoro"}}

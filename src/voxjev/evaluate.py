@@ -125,14 +125,38 @@ def _percentile(values: list[float], q: float) -> float:
     return ordered[min(len(ordered) - 1, round(q * (len(ordered) - 1)))]
 
 
+# Contexte figé pour une éval reproductible : menus d'un navigateur et quelques Raccourcis.
+EVAL_MENUS = [("Fichier", "Nouvelle fenêtre"), ("Fichier", "Nouvelle fenêtre privée"), ("Fichier", "Nouvel onglet"),
+              ("Fichier", "Exporter au format PDF…"), ("Fichier", "Imprimer…"), ("Fichier", "Fermer l'onglet"),
+              ("Édition", "Annuler"), ("Édition", "Copier"), ("Édition", "Coller"), ("Édition", "Rechercher…"),
+              ("Présentation", "Afficher la barre latérale"), ("Présentation", "Afficher la barre des favoris"),
+              ("Présentation", "Zoom avant"), ("Présentation", "Zoom arrière"), ("Présentation", "Mode lecteur"),
+              ("Présentation", "Recharger la page"), ("Signets", "Ajouter un signet…"),
+              ("Safari", "Vider l'historique…"), ("Safari", "Réglages…"), ("Safari", "Quitter Safari")]
+EVAL_SHORTCUTS = ["Créer un code QR", "Raccourci Shazam", "Prix de l'Ethereum", "Afficher des captures d'écran", "Créer GIF"]
+
+
+def _eval_provider():
+    from .axmenu import MenuItem
+    from .candidates import Provider
+
+    return Provider(menu_reader=lambda pid: [MenuItem(p) for p in EVAL_MENUS], shortcut_lister=lambda: EVAL_SHORTCUTS)
+
+
+EVAL_PROVIDER = None
+
+
 def run_eval(path: Path, config: Config, client, workers: int = 6, verbose: bool = True) -> int:
+    global EVAL_PROVIDER
+    EVAL_PROVIDER = _eval_provider()
     cases = load_cases(path, config)
     apps = installed_apps(config.settings.app_dirs)
     splitter = build_splitter(config.settings)
 
     def run(case: Case) -> Summary:
         session = Session(mode=case.mode, path=None)
-        launcher = Launcher(config, client, session, dry_run=True, frontmost=lambda: "Finder", apps=apps)
+        launcher = Launcher(config, client, session, dry_run=True, frontmost=lambda: "Safari", apps=apps,
+                            provider=EVAL_PROVIDER)
         return summarize(MultiRunner(launcher, splitter).handle(case.phrase))
 
     started = time.perf_counter()

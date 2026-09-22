@@ -16,7 +16,11 @@ import string
 from dataclasses import dataclass
 from urllib.parse import quote, quote_plus
 
-from .config import URL_SCHEMES, Command, Config
+from .config import COMBO_RE, INFO_TOPICS, URL_SCHEMES, Command, Config
+
+
+def _placeholders_in(template: str) -> set[str]:
+    return {name for _, name, _, _ in string.Formatter().parse(template) if name}
 
 
 class ActionError(RuntimeError):
@@ -40,6 +44,8 @@ class Step:
         if self.kind == "spotify":
             op, query = self.argv
             return f"[spotify {op}" + (f" {query!r}]" if query else "]")
+        if self.kind != "run":
+            return f"[{self.label}]"
         return " ".join(_shell_repr(a) for a in self.argv)
 
 
@@ -78,10 +84,114 @@ def _keystroke_argv(key: str, modifiers: list[str], app: str | None) -> tuple[st
     return ("osascript", "-e", stroke)
 
 
+_AS_MODS = {"cmd": "command down", "shift": "shift down", "alt": "option down", "ctrl": "control down"}
+
+
+def keycombo_argv(combo: str) -> tuple[str, ...]:
+    """« cmd+shift+t » / « code:121 » -> osascript System Events. Grammaire stricte (config.COMBO_RE)."""
+    if not COMBO_RE.fullmatch(combo):
+        raise ActionError(f"raccourci clavier invalide : {combo!r}")
+    *mods, key = combo.split("+")
+    using = ", ".join(_AS_MODS[m] for m in mods)
+    if key.startswith("code:"):
+        stroke = f"key code {int(key[5:])}"
+    else:
+        stroke = 'keystroke "' + key.replace("\\", "\\\\").replace('"', '\\"') + '"'
+    line = f'tell application "System Events" to {stroke}' + (f" using {{{using}}}" if using else "")
+    return ("osascript", "-e", line)
+
+
+def _argv_script(lines: list[str], *argv: str) -> tuple[str, ...]:
+    """Script AppleScript FIGÉ ; toutes les valeurs variables passent en argv (jamais interpolées)."""
+    return ("osascript", *[x for line in lines for x in ("-e", line)], *argv)
+
+
+def _date_argv(iso: str) -> list[str]:
+    from datetime import datetime
+
+    at = datetime.strptime(iso, "%Y-%m-%dT%H:%M")
+    return [str(at.year), str(at.month), str(at.day), str(at.hour), str(at.minute)]
+
+
+# Construit une date AppleScript à partir de argv[i..i+4] (année, mois, jour, heure, minute).
+_AS_DATE = [
+    "set d to current date",
+    "set day of d to 1",
+    "set year of d to (item {0} of argv) as integer",
+    "set month of d to (item {1} of argv) as integer",
+    "set day of d to (item {2} of argv) as integer",
+    "set hours of d to (item {3} of argv) as integer",
+    "set minutes of d to (item {4} of argv) as integer",
+    "set seconds of d to 0",
+]
+
+
+def _as_date(first: int) -> list[str]:
+    return [line.format(*range(first, first + 5)) for line in _AS_DATE]
+
+
+REMINDER_SCRIPT = ["on run argv", *_as_date(2),
+                   'tell application "Reminders" to make new reminder with properties {name:(item 1 of argv), remind me date:d}',
+                   "end run"]
+REMINDER_NODATE_SCRIPT = ["on run argv", 'tell application "Reminders" to make new reminder with properties {name:(item 1 of argv)}',
+                          "end run"]
+CALENDAR_ADD_SCRIPT = [
+    "on run argv", *_as_date(2),
+    "set m to (item 7 of argv) as integer",
+    'tell application "Calendar"',
+    "set wanted to item 8 of argv",
+    'if wanted is "" then',
+    "set cal to first calendar whose writable is true",
+    "else",
+    "set cal to first calendar whose name is wanted",
+    "end if",
+    "tell cal to make new event with properties {summary:(item 1 of argv), start date:d, end date:(d + m * minutes)}",
+    "end tell",
+    "end run",
+]
+NOTE_SCRIPT = ["on run argv", 'tell application "Notes"',
+               "make new note at folder 1 of default account with properties {body:(item 1 of argv)}",
+               "activate", "end tell", "end run"]
+
+
+def routine_values(target: Command, given: dict, config: Config) -> dict[str, str]:
+    """Valeurs figées d'une étape de routine, converties comme si elles avaient été dites."""
+    from .when import parse_duration, parse_when
+
+    out = {}
+    for name, raw in given.items():
+        value = str(raw)
+        spec = target.args[name]
+        if spec.type == "app":
+            value = config.settings.app_aliases.get(value.lower(), value)
+        elif spec.type == "enum":
+            key = value if value in spec.values else next(
+                (k for k, v in spec.values.items() if value in v.get("aliases", [])), None)
+            if key is None:
+                raise ActionError(f"valeur {value!r} inconnue pour {name}")
+            value = spec.values[key]["value"]
+        elif spec.type == "duration":
+            seconds = parse_duration(value)
+            if not seconds:
+                raise ActionError(f"durée illisible : {value!r}")
+            value = str(seconds)
+        elif spec.type == "when":
+            w = parse_when(value)
+            if not w:
+                raise ActionError(f"date illisible : {value!r}")
+            value = w.at.strftime("%Y-%m-%dT%H:%M")
+        out[name] = value
+    return out
+
+
 def plan_action(action: dict, command: Command | None, values: dict[str, str], config: Config,
-                installed: tuple[str, ...], depth: int = 0) -> list[Step]:
+                installed: tuple[str, ...], depth: int = 0, data: dict | None = None) -> list[Step]:
     kind = action["type"]
     args = command.args if command else {}
+    data = data or {}
+
+    def val(field_name: str) -> str:
+        return _render(str(action.get(field_name, "")), values)
 
     if kind == "sequence":
         steps: list[Step] = []
@@ -147,7 +257,107 @@ def plan_action(action: dict, command: Command | None, values: dict[str, str], c
         raise ActionError("l'annulation se planifie dans le pipeline (voir Launcher.plan)")
 
     if kind == "shortcut":
-        return [Step("run", ("shortcuts", "run", action["name"]), label=f"raccourci {action['name']}")]
+        name = val("name")
+        if _placeholders_in(action["name"]):
+            from .candidates import list_shortcuts
+
+            if name not in list_shortcuts():  # uniquement un raccourci qui existe vraiment
+                raise ActionError(f"raccourci introuvable : {name!r}")
+        return [Step("run", ("shortcuts", "run", name), label=f"Raccourci « {name} »")]
+
+    if kind == "menu":
+        name = next(iter(_placeholders_in(action["item"])))
+        path = data.get(name) or tuple(p.strip() for p in values.get(name, "").split("›"))
+        if not path or not all(path):
+            raise ActionError("élément de menu inconnu")
+        return [Step("menu", tuple(path), label=f"Menu « {' › '.join(path)} »")]
+
+    if kind == "type_text":
+        text = val("text")
+        if not text:
+            raise ActionError("rien à taper")
+        submit = bool(action.get("submit", False))
+        return [Step("type", (text, "1" if submit else ""), label=f"Taper « {text[:60]} »" + (" + Entrée" if submit else ""))]
+
+    if kind == "keycombo":
+        combo = val("combo")
+        return [Step("run", keycombo_argv(combo), label=f"Raccourci clavier {combo}")]
+
+    if kind == "timer":
+        from .when import format_duration
+
+        seconds = int(val("seconds") or 0)
+        if not 0 < seconds <= 24 * 3600:
+            raise ActionError("durée de minuteur invalide")
+        label = val("label") if action.get("label") else ""
+        return [Step("timer", (str(seconds), label), label=f"Minuteur {format_duration(seconds)}"
+                     + (f" « {label} »" if label else ""))]
+
+    if kind == "reminder":
+        title = val("title")
+        when = val("when") if action.get("when") else ""
+        if not title:
+            raise ActionError("rappel sans titre")
+        if when:
+            return [Step("run", _argv_script(REMINDER_SCRIPT, title, *_date_argv(when)), label=f"Rappel « {title} »")]
+        return [Step("run", _argv_script(REMINDER_NODATE_SCRIPT, title), label=f"Rappel « {title} »")]
+
+    if kind == "calendar_add":
+        title, when = val("title"), val("when")
+        if not title or not when:
+            raise ActionError("événement sans titre ou sans date")
+        minutes = str(int(action.get("minutes", 60)))
+        calendar = str(action.get("calendar", ""))
+        return [Step("run", _argv_script(CALENDAR_ADD_SCRIPT, title, *_date_argv(when), minutes, calendar),
+                     label=f"Agenda « {title} »")]
+
+    if kind == "calendar_read":
+        when = val("when") if action.get("when") else ""
+        return [Step("agenda", (when[:10],), label="Lire l'agenda")]
+
+    if kind == "note_add":
+        body = val("body")
+        if not body:
+            raise ActionError("note vide")
+        return [Step("run", _argv_script(NOTE_SCRIPT, body), label=f"Note « {body[:60]} »")]
+
+    if kind == "mail_draft":
+        return [Step("mail", (val("to") if action.get("to") else "", val("body")), label="Brouillon d'e-mail (non envoyé)")]
+
+    if kind == "info":
+        topic = val("what")
+        if topic not in INFO_TOPICS:
+            raise ActionError(f"information inconnue : {topic!r}")
+        return [Step("info", (topic,), label={"time": "Heure", "date": "Date", "battery": "Batterie",
+                                                "timers": "Minuteurs en cours"}[topic])]
+
+    if kind == "routine":
+        steps = []
+        for st in action["steps"]:
+            if "wait" in st:
+                steps.append(Step("wait", (str(st["wait"]),), label=f"pause {st['wait']} s"))
+                continue
+            target = config.commands[st["run"]]
+            tvalues = routine_values(target, st.get("with") or {}, config)
+            steps += plan_action(target.action, target, tvalues, config, installed, depth + 1)
+            if target.action.get("type") in ("open_app", "set_mode"):
+                steps.append(Step("wait", (str(config.settings.step_delay_seconds),), label="pause"))
+        while steps and steps[-1].kind == "wait":
+            steps.pop()
+        return steps
+
+    if kind in ("memory_add", "memory_ask", "memory_forget", "ask", "desktop_task", "file_open", "mail_triage"):
+        field_name = {"memory_add": "fact", "memory_ask": "question", "memory_forget": "question", "ask": "question",
+                      "desktop_task": "goal", "file_open": "query", "mail_triage": ""}[kind]
+        text = val(field_name) if field_name else ""
+        if field_name and not text:
+            raise ActionError("rien à traiter")
+        extra = ("1",) if kind == "file_open" and action.get("reveal") else ()
+        labels = {"memory_add": f"Retenir « {text[:60]} »", "memory_ask": f"Chercher dans la mémoire : « {text[:50]} »",
+                  "memory_forget": f"Oublier : « {text[:50]} »", "ask": f"Question : « {text[:60]} »",
+                  "desktop_task": f"Agent bureau : « {text[:60]} »", "file_open": f"Fichier : « {text[:60]} »",
+                  "mail_triage": "Trier les mails non lus"}
+        return [Step(kind, (text, *extra), label=labels[kind])]
 
     if kind == "exec":
         argv = tuple(action["argv"])
@@ -171,5 +381,5 @@ def plan_action(action: dict, command: Command | None, values: dict[str, str], c
 
 
 def plan_command(command: Command, values: dict[str, str], config: Config,
-                 installed: tuple[str, ...]) -> list[Step]:
-    return plan_action(command.action, command, values, config, installed)
+                 installed: tuple[str, ...], data: dict | None = None) -> list[Step]:
+    return plan_action(command.action, command, values, config, installed, data=data)

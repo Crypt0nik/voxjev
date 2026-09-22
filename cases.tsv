@@ -129,10 +129,80 @@ cherche la recette des crêpes et ouvre YouTube	web_search>open_website
 ouvre chrome et cherche la météo à Lyon	web_search
 # --- hors sujet / conversation / bruit
 tu viens manger avec nous	none
-c'est quoi la capitale du Pérou	none
+c'est quoi la capitale du Pérou	ask_question
 euh attends je réfléchis	none
 Marc ouvre la porte s'il te plaît	none
 annule ça	undo_last
 annule la dernière action	undo_last
 reviens en arrière je voulais pas ça	undo_last
 j'ai annulé mon rendez-vous chez le dentiste	none
+exporte cette page en PDF	menu_item
+ouvre une fenêtre de navigation privée	menu_item
+affiche la barre latérale	menu_item
+j'ai exporté le rapport en PDF hier	none
+lance le raccourci créer un code QR	run_shortcut
+fais le raccourci Shazam	run_shortcut
+j'ai créé un raccourci sur mon iPhone	none
+tape bonjour tout le monde	type_text
+écris je serai en retard de dix minutes	type_text
+j'ai tapé tout le rapport ce matin	none
+tape salut ça va et envoie	type_text_enter
+écris ok pour moi et appuie sur entrée	type_text_enter
+copie	key_shortcut
+rouvre l'onglet fermé	key_shortcut
+recharge la page	key_shortcut
+il faut que je copie mes notes de cours	none
+descends	scroll
+va tout en haut de la page	scroll
+on descend manger dans cinq minutes	none
+passe en mode sombre	dark_mode
+remets le thème clair	dark_mode
+le mode sombre c'est quand même plus joli	none
+augmente la luminosité	brightness_up
+baisse la luminosité	brightness_down
+coupe le wifi	wifi_off
+réactive le wifi	wifi_on
+le wifi de l'hôtel était nul	none
+mets un minuteur de 10 minutes	set_timer
+minuteur trois minutes pour les pâtes	set_timer
+préviens-moi dans une demi-heure	set_timer
+le minuteur du four est cassé	none
+quelle heure est-il	info
+il reste combien de batterie	info
+on est quel jour	info
+il était quelle heure quand il est parti	none
+rappelle-moi d'appeler Paul demain à 18h	reminder_add
+rappelle-moi de sortir le linge dans 20 minutes	reminder_add
+ajoute un rappel acheter du pain	reminder_add
+Paul m'a rappelé hier soir	none
+ajoute un rendez-vous chez le dentiste mardi à 14h30	event_add
+mets une réunion avec l'équipe demain à 10h	event_add
+j'ai eu une réunion super longue aujourd'hui	none
+qu'est-ce que j'ai demain	agenda_read
+c'est quoi mon programme aujourd'hui	agenda_read
+tu as quoi de prévu ce week-end toi	none
+note que je dois acheter des piles	note_add
+prends en note le code wifi de l'hôtel est 4521	note_add
+il prend toujours des notes en cours	none
+écris un mail à Paul pour lui dire que je serai en retard	mail_draft
+rédige un mail au propriétaire pour signaler la fuite	mail_draft
+j'ai reçu un mail bizarre ce matin	none
+quels mails demandent une action	mail_triage
+est-ce que j'ai des mails importants	mail_triage
+ouvre le fichier rapport de stage	open_file
+ouvre mon CV	open_file
+montre-moi où est le fichier rapport de stage dans le Finder	reveal_file
+je n'arrive jamais à retrouver mes fichiers	none
+retiens que mon dentiste c'est le docteur Martin	memory_add
+souviens-toi que le code du portail est 1234	memory_add
+je me souviens de ce voyage à Rome	none
+c'est qui mon dentiste déjà	memory_ask
+qu'est-ce que je t'avais dit sur le code du portail	memory_ask
+oublie le code du portail	memory_forget
+dis-moi c'est quoi la capitale du Pérou	ask_question
+explique-moi ce qu'est une injection SQL	ask_question
+combien font 17 fois 23	ask_question
+dans cette fenêtre coche la case ne plus demander et valide	desktop_task
+lance ma routine du matin	routine_matin
+mode concentration	routine_concentration
+ma routine du matin c'est café puis douche	none

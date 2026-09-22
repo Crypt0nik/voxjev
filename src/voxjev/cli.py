@@ -38,10 +38,19 @@ def format_outcome(out: Outcome, mode: str) -> str:
     if d:
         color = {"execute": "32", "confirm": "33", "ignore": "90"}[d.verdict.value]
         lines.append(f"  Décision : {_c(d.verdict.value.upper(), color)} ({d.reason})")
+    if r and r.picks:
+        chosen = []
+        for src, (idx, p) in r.picks.items():
+            pool = out.candidates.get(src) or []
+            label = pool[idx].label if idx is not None and idx < len(pool) else "aucun"
+            chosen.append(f"{src}={label[:50]!r} {p:.2f}")
+        lines.append(_c("  Choix de Jev : " + " · ".join(chosen), "90"))
     if out.args and out.args.values:
-        lines.append("  Arguments : " + " ".join(f"{k}={v!r}" for k, v in out.args.values.items()))
+        lines.append("  Arguments : " + " ".join(f"{k}={v!r}" for k, v in out.args.shown.items()))
     for step in out.steps:
         lines.append(f"  $ {step}")
+    for msg in out.messages:
+        lines.append("  " + _c(f"💬 {msg}", "36"))
     status = out.status + (f" : {out.error}" if out.error else "")
     timing = " ".join(f"{k}={v:.0f}" for k, v in out.timings.items())
     lines.append(f"  → {_c(status, _COLORS.get(out.status, '0'))}" + (f"  ({timing})" if timing else ""))
@@ -55,11 +64,13 @@ def format_plan(plan, mode: str) -> str:
     for i, (part, o) in enumerate(zip(plan.parts, plan.items), 1):
         r = o.result
         what = f"{o.command_id or (r.command if r else '?')}" + (f" p={r.p_command:.2f}" if r else "")
-        args = " ".join(f"{k}={v!r}" for k, v in o.args.values.items()) if o.args and o.args.values else ""
+        args = " ".join(f"{k}={v!r}" for k, v in o.args.shown.items()) if o.args and o.args.values else ""
         status = o.status + (f" : {o.error}" if o.error else "")
         lines.append(f"  {i}. « {part} » → {_c(what, '1')} {args}  [{_c(status, _COLORS.get(o.status, '0'))}]")
         for step in o.steps:
             lines.append(f"       $ {step}")
+        for msg in o.messages:
+            lines.append("       " + _c(f"💬 {msg}", "36"))
     timing = " ".join(f"{k}={v:.0f}" for k, v in plan.timings.items())
     status = plan.status + (f" : {plan.error}" if plan.error else "")
     lines.append(f"  → {_c(status, _COLORS.get(plan.status, '0'))}  ({timing})")
@@ -75,7 +86,7 @@ def format_any(out, mode: str) -> str:
 def terminal_plan_confirmer(plan) -> bool:
     print(f"  Plan en {len(plan.runnable)} étape(s) à exécuter :")
     for o in plan.runnable:
-        print(f"    • {o.decision.command.short(o.args.values if o.args else None)}  ({o.decision.reason})")
+        print(f"    • {o.decision.command.short(o.args.shown if o.args else None)}  ({o.decision.reason})")
     for o in plan.dropped:
         print(f"    ✗ ignoré : « {o.transcript} »")
     try:
