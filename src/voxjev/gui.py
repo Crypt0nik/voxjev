@@ -411,9 +411,9 @@ class GuiApp:
         # Position mémorisée par macOS (après un ⌘-glisser) ; toujours visible.
         self.item.setAutosaveName_("local.voxjev.statusitem")
         self.item.setVisible_(True)
-        icon = os.path.join(os.path.dirname(__file__), "..", "..", "assets", "AppIcon.png")
-        if os.path.exists(icon):  # icône des fenêtres Réglages et des alertes
-            self.nsapp.setApplicationIconImage_(NSImage.alloc().initWithContentsOfFile_(os.path.abspath(icon)))
+        bundle = os.path.expanduser("~/Applications/voxjev.app")
+        if os.path.exists(bundle):  # icône des fenêtres Réglages et des alertes (découpée par macOS)
+            self.nsapp.setApplicationIconImage_(NSWorkspace.sharedWorkspace().iconForFile_(bundle))
         self.ptt: PushToTalk | None = None
         self.hands_free: HandsFree | None = None
         self.settings_window = None
