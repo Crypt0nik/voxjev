@@ -33,6 +33,22 @@ if "--dark" in sys.argv:
     hud.panel.setAppearance_(NSAppearance.appearanceNamed_("NSAppearanceNameDarkAqua"))
 hud.set_mode("defaut", False)
 
+if "--backdrop" in sys.argv:  # fond neutre derrière le HUD (captures publiables, sans le bureau)
+    from AppKit import NSBackingStoreBuffered, NSColor, NSMakeRect, NSWindow
+
+    from voxjev.settings import Aurora
+
+    frame = NSScreen.mainScreen().frame()
+    back = NSWindow.alloc().initWithContentRect_styleMask_backing_defer_(
+        NSMakeRect(frame.origin.x + frame.size.width / 2 - 360, frame.origin.y + frame.size.height - 560, 720, 560),
+        0, NSBackingStoreBuffered, False)
+    back.setLevel_(0)
+    back.setBackgroundColor_(NSColor.windowBackgroundColor())
+    view = Aurora.alloc().initWithFrame_(back.contentView().bounds())
+    view.setAutoresizingMask_(18)
+    back.contentView().addSubview_(view)
+    back.orderFrontRegardless()
+
 
 def shot(name: str):
     def go():

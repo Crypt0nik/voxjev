@@ -3,7 +3,7 @@ name = "voxjev"
 version = "0.1.0"
 description = "Add your description here"
 authors = [
-    { name = "Arthur", email = "arthurobraqueto@gmail.com" }
+    { name = "Arthur" }
 ]
 requires-python = ">=3.12"
 dependencies = [

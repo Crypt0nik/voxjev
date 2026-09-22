@@ -831,7 +831,7 @@ commands:
   - id: desktop_task
     label: "Agent bureau : « {goal} »"
     description: "Tâche en plusieurs clics et saisies dans l'app au premier plan (fenêtres, boutons, champs, cases à cocher), quand aucune commande simple ne suffit"
-    examples: ["dans cette fenêtre coche la case ne plus demander et valide", "dans les réglages de l'app active les notifications", "remplis le champ nom avec Arthur et clique sur continuer"]
+    examples: ["dans cette fenêtre coche la case ne plus demander et valide", "dans les réglages de l'app active les notifications", "remplis le champ nom avec Camille et clique sur continuer"]
     destructive: false
     always_confirm: true
     args:
