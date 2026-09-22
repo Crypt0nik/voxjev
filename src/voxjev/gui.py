@@ -408,6 +408,12 @@ class GuiApp:
         self.trusted = accessibility_trusted()
         self.target = MenuTarget.alloc().initWithApp_(self)
         self.item = NSStatusBar.systemStatusBar().statusItemWithLength_(NSVariableStatusItemLength)
+        # Position mémorisée par macOS (après un ⌘-glisser) ; toujours visible.
+        self.item.setAutosaveName_("local.voxjev.statusitem")
+        self.item.setVisible_(True)
+        icon = os.path.join(os.path.dirname(__file__), "..", "..", "assets", "AppIcon.png")
+        if os.path.exists(icon):  # icône des fenêtres Réglages et des alertes
+            self.nsapp.setApplicationIconImage_(NSImage.alloc().initWithContentsOfFile_(os.path.abspath(icon)))
         self.ptt: PushToTalk | None = None
         self.hands_free: HandsFree | None = None
         self.settings_window = None

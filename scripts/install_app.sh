@@ -35,6 +35,7 @@ cat > "$BUILD/Contents/Info.plist" <<PLIST
   <key>CFBundleIdentifier</key><string>local.voxjev.app</string>
   <key>CFBundleExecutable</key><string>voxjev</string>
   <key>CFBundlePackageType</key><string>APPL</string>
+  <key>CFBundleIconFile</key><string>AppIcon</string>
   <key>CFBundleShortVersionString</key><string>0.2</string>
   <key>LSUIElement</key><true/>
   <key>LSMinimumSystemVersion</key><string>13.0</string>
@@ -46,15 +47,37 @@ cat > "$BUILD/Contents/Info.plist" <<PLIST
   <key>NSContactsUsageDescription</key><string>voxjev retrouve l'adresse d'un contact pour préparer un brouillon d'e-mail.</string>
 </dict></plist>
 PLIST
-STAMP="$(cat "$BUILD/Contents/MacOS/voxjev" "$BUILD/Contents/Info.plist" | shasum -a 256 | cut -d' ' -f1)"
+cp "$PROJECT/assets/AppIcon.icns" "$BUILD/Contents/Resources/AppIcon.icns"
+
+# Signature avec un certificat local STABLE (créé une fois dans le trousseau de session) : macOS
+# identifie l'app par « identifiant + certificat », donc les autorisations survivent aux mises à jour.
+# (Une signature ad hoc change à chaque construction et fait tout oublier.)
+IDENTITY="voxjev local signing"
+if ! security find-certificate -c "$IDENTITY" >/dev/null 2>&1; then
+  TMPC="$(mktemp -d)"; PASS="$(openssl rand -hex 12)"
+  openssl req -x509 -newkey rsa:2048 -nodes -days 3650 -keyout "$TMPC/k" -out "$TMPC/c" -subj "/CN=$IDENTITY" \
+    -addext "keyUsage=critical,digitalSignature" -addext "extendedKeyUsage=critical,codeSigning" \
+    -addext "basicConstraints=critical,CA:false" 2>/dev/null
+  openssl pkcs12 -export -legacy -inkey "$TMPC/k" -in "$TMPC/c" -name "$IDENTITY" -out "$TMPC/p" -passout "pass:$PASS"
+  security import "$TMPC/p" -k "$HOME/Library/Keychains/login.keychain-db" -P "$PASS" -T /usr/bin/codesign >/dev/null
+  rm -rf "$TMPC"
+  echo "Certificat local « $IDENTITY » créé dans le trousseau de session."
+fi
+SIGN="$IDENTITY"
+security find-certificate -c "$IDENTITY" >/dev/null 2>&1 || SIGN="-"
+
+STAMP="$(cat "$BUILD/Contents/MacOS/voxjev" "$BUILD/Contents/Info.plist" "$BUILD/Contents/Resources/AppIcon.icns" \
+         <(echo "$SIGN") | shasum -a 256 | cut -d' ' -f1)"
 if [[ -f "$APP/Contents/Resources/build.sha256" && "$(cat "$APP/Contents/Resources/build.sha256")" == "$STAMP" ]]; then
   echo "App déjà à jour : $APP (autorisations conservées)"
 else
   echo "$STAMP" > "$BUILD/Contents/Resources/build.sha256"
   rm -rf "$APP" && mkdir -p "$(dirname "$APP")" && cp -R "$BUILD" "$APP"
-  codesign --force --deep --sign - "$APP" >/dev/null 2>&1
+  codesign --force --deep --sign "$SIGN" "$APP" >/dev/null 2>&1 || codesign --force --deep --sign - "$APP" >/dev/null 2>&1
+  touch "$APP"  # le Finder et le Dock rafraîchissent l'icône
   echo "App construite : $APP"
-  echo "⚠️  Nouvelle signature : si voxjev était déjà autorisée, réactivez-la dans Réglages › Confidentialité"
+  echo "Signée avec : $SIGN"
+  echo "⚠️  Si l'identité de signature a changé, réactivez voxjev une fois dans Réglages › Confidentialité"
   echo "   (Accessibilité, Surveillance de l'entrée ; retirez l'ancienne entrée avec « − » si besoin)."
 fi
 
