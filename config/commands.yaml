@@ -267,7 +267,7 @@ commands:
   - id: next_track
     label: "Morceau suivant"
     description: "Passer au morceau de musique suivant (Spotify)"
-    examples: ["chanson suivante", "passe au morceau suivant", "next"]
+    examples: ["chanson suivante", "passe au morceau suivant", "next", "zappe cette chanson"]
     destructive: false
     action: {type: applescript, script: "tell application \"Spotify\" to next track"}
     undo: {type: applescript, script: "tell application \"Spotify\" to previous track"}

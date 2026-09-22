@@ -32,7 +32,7 @@ def decide(result: JevResult, commands: dict[str, Command], s: Settings) -> Deci
     2. adressé < addressed_floor                  -> ignorer
     3. p(commande) < confirm_floor                -> ignorer
     4. destructive (config OU Noul >= seuil)      -> confirmer, quelle que soit p
-    4b. mode sans confirmation + commande sans risque (settings.safe_commands) -> exécuter
+    4b. mode sans confirmation + commande sans risque + doute seulement sur la confiance -> exécuter
     5. adressé < addressed_threshold              -> confirmer (adressé incertain)
     6. p(commande) < threshold                    -> confirmer
     7. sinon                                      -> exécuter
@@ -60,7 +60,9 @@ def decide(result: JevResult, commands: dict[str, Command], s: Settings) -> Deci
         doubt = Decision(Verdict.CONFIRM, cmd, code="medium_p", reason=f"confiance moyenne (p={p:.2f} < {s.threshold:.2f})")
     else:
         return Decision(Verdict.EXECUTE, cmd, code="ok", reason=f"p={p:.2f} >= {s.threshold:.2f}")
-    if s.quiet_mode and cmd.id in s.safe_commands:  # action sans risque : pas de confirmation
+    # Le mode sans confirmation ne joue que sur la confiance dans la commande : si Jev doute que la
+    # phrase lui soit adressée, on demande toujours (une conversation ne doit rien déclencher).
+    if s.quiet_mode and doubt.code == "medium_p" and cmd.id in s.safe_commands:
         return Decision(Verdict.EXECUTE, cmd, code="safe", reason=f"action sans risque, sans confirmation ({doubt.reason})")
     return doubt
 

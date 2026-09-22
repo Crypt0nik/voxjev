@@ -97,9 +97,11 @@ def load_cases(path: Path, config: Config) -> list[Case]:
             if mode not in config.modes:
                 raise ValueError(f"{path}:{i}: mode inconnu {mode!r}")
             known = set(config.commands)
-            for cid in expected.split(">"):
-                if cid != "none" and cid not in known:
-                    raise ValueError(f"{path}:{i}: commande inconnue {cid!r}")
+            # « a » · « a>b » (séquence) · « a|b>c » (plusieurs réponses acceptables, si équivalentes)
+            for alternative in expected.split("|"):
+                for cid in alternative.split(">"):
+                    if cid != "none" and cid not in known:
+                        raise ValueError(f"{path}:{i}: commande inconnue {cid!r}")
             cases.append(Case(i, row[0].strip(), expected, mode))
     return cases
 
@@ -111,7 +113,7 @@ def classify(case: Case, s: Summary) -> str:
         return "ok" if s.got == "none" else "false_trigger"
     if s.got in ("none", "error"):
         return "missed"
-    if s.got != case.expected:
+    if s.got not in case.expected.split("|"):
         return "wrong_command"
     if not s.args_ok:
         return "missing_args"

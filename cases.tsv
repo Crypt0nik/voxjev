@@ -146,8 +146,8 @@ j'ai créé un raccourci sur mon iPhone	none
 tape bonjour tout le monde	type_text
 écris je serai en retard de dix minutes	type_text
 j'ai tapé tout le rapport ce matin	none
-tape salut ça va et envoie	type_text_enter
-écris ok pour moi et appuie sur entrée	type_text_enter
+tape salut ça va et envoie	type_text_enter|type_text>key_shortcut
+écris ok pour moi et appuie sur entrée	type_text_enter|type_text>key_shortcut
 copie	key_shortcut
 rouvre l'onglet fermé	key_shortcut
 recharge la page	key_shortcut
@@ -202,7 +202,7 @@ oublie le code du portail	memory_forget
 dis-moi c'est quoi la capitale du Pérou	ask_question
 explique-moi ce qu'est une injection SQL	ask_question
 combien font 17 fois 23	ask_question
-dans cette fenêtre coche la case ne plus demander et valide	desktop_task
+dans cette fenêtre coche la case ne plus demander et valide	desktop_task|desktop_task>desktop_task
 lance ma routine du matin	routine_matin
 mode concentration	routine_concentration
 ma routine du matin c'est café puis douche	none

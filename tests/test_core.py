@@ -128,7 +128,8 @@ def test_quiet_mode_skips_confirmation_for_safe_commands_only(config):
     assert s.quiet_mode and "open_app" in s.safe_commands
     d = decide(result("open_app", 0.6), cmds, s)
     assert d.verdict == Verdict.EXECUTE and d.code == "safe"
-    assert decide(result("open_app", 0.9, addressed=0.5), cmds, s).verdict == Verdict.EXECUTE
+    # un doute sur « ça m'est adressé » fait toujours demander, même pour une action sans risque
+    assert decide(result("open_app", 0.9, addressed=0.5), cmds, s).verdict == Verdict.CONFIRM
     # les planchers restent : trop incertain ou non adressé -> ignoré
     assert decide(result("open_app", 0.3), cmds, s).verdict == Verdict.IGNORE
     assert decide(result("open_app", 0.9, addressed=0.2), cmds, s).verdict == Verdict.IGNORE
