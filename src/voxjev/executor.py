@@ -248,6 +248,13 @@ class SubprocessExecutor:
             raise ActionError("étape non résolue (voir Launcher)")
         if k != "run" or not step.argv:
             return None
+        argv = step.argv
+        if argv[0] == "open" and argv[-1].startswith(("http://", "https://")) and len(argv) in (2, 4):
+            from .chrome import open_in_browser  # nouvel onglet actif (pas « Little Arc »)
+
+            app = argv[2] if len(argv) == 4 and argv[1] == "-a" else None
+            if open_in_browser(argv[-1], app):
+                return None
         self._subprocess(step)
         return None
 
@@ -257,12 +264,21 @@ class SubprocessExecutor:
 
         if self.client is None:
             raise ActionError("client Jev indisponible")
-        deadline = time.monotonic() + 6.0
+        deadline = time.monotonic() + 15.0
+        time.sleep(1.0)  # laisser la nouvelle page démarrer son chargement
         try:
             while True:
-                title, url, links = page_links()
-                if any(link.result for link in links) or time.monotonic() > deadline:
+                try:
+                    title, url, links = page_links(timeout=4)  # essais courts : la page peut bloquer en chargeant
+                except ChromeError:
+                    if time.monotonic() > deadline:
+                        raise
+                    time.sleep(0.7)  # page encore en chargement : le navigateur ne répond pas tout de suite
+                    continue
+                if any(link.result for link in links):
                     break
+                if time.monotonic() > deadline:  # jamais de repli sur un lien quelconque de l'ancienne page
+                    raise ChromeError("la page de résultats n'est pas apparue dans le navigateur")
                 time.sleep(0.5)  # la page de résultats se charge encore
             link, _, _ = pick(self.client, transcript, title, url, links, getattr(self.settings, "pick_min_p", 0.5))
             self.progress(f"ouverture de « {link.text[:60]} » ({link.domain})")

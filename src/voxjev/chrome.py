@@ -1,7 +1,9 @@
-"""Agir sur la page déjà ouverte dans Chrome : « clique sur le 2ᵉ lien », « ouvre le meilleur résultat ».
+"""Agir sur la page déjà ouverte dans le navigateur : « clique sur le 2ᵉ lien », « ouvre le meilleur résultat ».
 
-Passe par le protocole de débogage de Chrome (CDP, activé dans chrome://inspect/#remote-debugging),
-sans navigateur supplémentaire :
+Navigateur visé : celui au premier plan, sinon le navigateur par défaut.
+- Arc, Brave, Edge, Vivaldi, Safari : AppleScript (lecture de la page + changement d'adresse) ;
+- Chrome : protocole de débogage (CDP, chrome://inspect/#remote-debugging), repli AppleScript.
+Dans tous les cas :
 - le code lit les liens VISIBLES de l'onglet actif (script de lecture figé, aucun code venu de la voix) ;
   sur une page de résultats, seuls les vrais résultats sont retenus ;
 - un rang (« le 2ᵉ », « le dernier ») est compté par le code ; sinon Jev choisit parmi les liens réels ;
@@ -173,8 +175,119 @@ def _session() -> _Session:
     return _shared
 
 
-def page_links() -> tuple[str, str, list[Link]]:
-    """(titre, url, liens) de l'onglet actif ; les résultats de recherche en premier."""
+# ------------------------------------------------------------------ navigateurs pilotés par AppleScript
+# Scripts FIGÉS par navigateur (le dictionnaire AppleScript exige le nom de l'app en dur) ;
+# le script JavaScript de lecture et l'adresse passent en argv.
+_CHROMIUM_AS = {
+    "Arc": ('tell application "Arc" to tell front window to tell active tab to execute javascript (item 1 of argv)',
+            'tell application "Arc" to tell front window to set URL of active tab to (item 1 of argv)'),
+    "Brave Browser": ('tell application "Brave Browser" to execute front window\'s active tab javascript (item 1 of argv)',
+                      'tell application "Brave Browser" to set URL of active tab of front window to (item 1 of argv)'),
+    "Microsoft Edge": ('tell application "Microsoft Edge" to execute front window\'s active tab javascript (item 1 of argv)',
+                       'tell application "Microsoft Edge" to set URL of active tab of front window to (item 1 of argv)'),
+    "Vivaldi": ('tell application "Vivaldi" to execute front window\'s active tab javascript (item 1 of argv)',
+                'tell application "Vivaldi" to set URL of active tab of front window to (item 1 of argv)'),
+    "Google Chrome": ('tell application "Google Chrome" to execute front window\'s active tab javascript (item 1 of argv)',
+                      'tell application "Google Chrome" to set URL of active tab of front window to (item 1 of argv)'),
+    "Safari": ('tell application "Safari" to do JavaScript (item 1 of argv) in current tab of front window',
+               'tell application "Safari" to set URL of current tab of front window to (item 1 of argv)'),
+}
+BROWSERS = tuple(_CHROMIUM_AS)
+# Ouvrir une adresse dans un NOUVEL ONGLET ACTIF de la fenêtre principale (pas « Little Arc ») :
+# l'étape suivante (« ouvre le premier lien ») retrouve ainsi la bonne page.
+_NEW_TAB = {
+    name: ["on run argv", f'tell application "{name}"', "if (count of windows) is 0 then make new window",
+           "tell front window to make new tab with properties {URL:(item 1 of argv)}", "activate", "end tell",
+           "end run"]
+    for name in ("Arc", "Google Chrome", "Brave Browser", "Microsoft Edge", "Vivaldi")
+}
+_NEW_TAB["Safari"] = ["on run argv", 'tell application "Safari"', "if (count of windows) is 0 then make new document",
+                      "tell front window to set current tab to (make new tab with properties {URL:(item 1 of argv)})",
+                      "activate", "end tell", "end run"]
+
+
+def open_in_browser(url: str, browser: str | None = None) -> bool:
+    """Ouvre `url` (http/https) dans un nouvel onglet actif. False si le navigateur n'est pas pilotable."""
+    if not re.match(r"^https?://", url, re.I):
+        return False
+    browser = browser or target_browser()
+    lines = _NEW_TAB.get(browser)
+    if not lines:
+        return False
+    try:
+        r = subprocess.run(["osascript", *[x for ln in lines for x in ("-e", ln)], url],
+                           capture_output=True, text=True, timeout=10)
+    except subprocess.TimeoutExpired:
+        return False
+    return r.returncode == 0
+
+
+def target_browser() -> str:
+    """Navigateur au premier plan s'il est pris en charge, sinon le navigateur par défaut."""
+    try:
+        from AppKit import NSURL, NSWorkspace
+
+        ws = NSWorkspace.sharedWorkspace()
+        front = ws.frontmostApplication()
+        name = str(front.localizedName()) if front else ""
+        if name in BROWSERS:
+            return name
+        url = ws.URLForApplicationToOpenURL_(NSURL.URLWithString_("https://example.com"))
+        if url is not None:
+            default = Path(str(url.path())).stem
+            if default in BROWSERS:
+                return default
+    except Exception:
+        pass
+    return "Google Chrome"
+
+
+def _osascript(line: str, arg: str, timeout: float = 10) -> str:
+    script = ["on run argv", line, "end run"]
+    try:
+        r = subprocess.run(["osascript", *[x for ln in script for x in ("-e", ln)], arg],
+                           capture_output=True, text=True, timeout=timeout)
+    except subprocess.TimeoutExpired as exc:
+        raise ChromeError("le navigateur ne répond pas") from exc
+    if r.returncode != 0:
+        err = r.stderr.strip()
+        if "JavaScript" in err or "-1743" in err or "javascript" in err.lower():
+            raise ChromeError("le navigateur refuse la lecture de la page : autorisez voxjev dans Réglages › "
+                              "Confidentialité › Automatisation (Safari : Développement › Autoriser le JavaScript "
+                              "depuis les événements Apple)")
+        raise ChromeError(f"navigateur : {err[-160:] or 'aucune fenêtre ouverte'}")
+    return r.stdout.strip()
+
+
+def _decode(raw: str) -> dict:
+    """JSON renvoyé par la page ; certains navigateurs (Arc) le renvoient encodé deux fois."""
+    data = json.loads(raw or "{}")
+    if isinstance(data, str):
+        data = json.loads(data or "{}")
+    return data if isinstance(data, dict) else {}
+
+
+def _parse(data: dict) -> tuple[str, str, list[Link]]:
+    links = [Link(x["href"], x["text"], bool(x["result"])) for x in data.get("links", [])
+             if not PRIVATE.search(x["href"]) and not PRIVATE.search(x["text"])]
+    return data.get("title", ""), data.get("url", ""), links[:MAX_LINKS]
+
+
+def page_links(timeout: float = 20) -> tuple[str, str, list[Link]]:
+    """(titre, url, liens) de l'onglet actif du navigateur ; les résultats de recherche en premier."""
+    browser = target_browser()
+    if browser == "Google Chrome":
+        try:
+            return _cdp_page_links()
+        except ChromeError as cdp_error:
+            try:
+                return _parse(_decode(_osascript(_CHROMIUM_AS[browser][0], LINKS_JS)))
+            except ChromeError:
+                raise cdp_error from None
+    return _parse(_decode(_osascript(_CHROMIUM_AS[browser][0], LINKS_JS, timeout=timeout)))
+
+
+def _cdp_page_links() -> tuple[str, str, list[Link]]:
     s = _session()
     try:
         _, session = s.attach_active()
@@ -182,15 +295,25 @@ def page_links() -> tuple[str, str, list[Link]]:
         data = json.loads(r.get("result", {}).get("value") or "{}")
     finally:
         s.close()
-    links = [Link(x["href"], x["text"], bool(x["result"])) for x in data.get("links", [])
-             if not PRIVATE.search(x["href"]) and not PRIVATE.search(x["text"])]
-    return data.get("title", ""), data.get("url", ""), links[:MAX_LINKS]
+    return _parse(data)
 
 
 def navigate(url: str) -> None:
     """Ouvre `url` dans l'onglet actif. Seules des adresses http(s) lues sur la page arrivent ici."""
     if not re.match(r"^https?://", url, re.I):
         raise ChromeError(f"adresse refusée : {url!r}")
+    browser = target_browser()
+    if browser != "Google Chrome":
+        _osascript(_CHROMIUM_AS[browser][1], url)
+        subprocess.run(["open", "-a", browser], check=False, timeout=5)
+        return
+    try:
+        _cdp_navigate(url)
+    except ChromeError:
+        _osascript(_CHROMIUM_AS[browser][1], url)
+
+
+def _cdp_navigate(url: str) -> None:
     s = _session()
     try:
         _, session = s.attach_active()

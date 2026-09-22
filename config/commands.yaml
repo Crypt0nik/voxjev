@@ -822,7 +822,7 @@ commands:
   # ---------------------------------------------------------------- page ouverte dans Chrome
   - id: page_link
     label: "Lien de la page"
-    description: "Ouvrir un lien ou un résultat de la page déjà affichée dans Chrome : le Nᵉ lien, le meilleur résultat, ou le lien d'un site précis"
+    description: "Ouvrir un lien ou un résultat de la page déjà affichée dans le navigateur (Arc, Chrome, Safari…) : le Nᵉ lien, le meilleur résultat, ou le lien d'un site précis"
     examples: ["clique sur le deuxième lien", "ouvre le premier résultat", "ouvre le meilleur résultat", "clique sur le lien Wikipédia", "ouvre celui du Routard", "ouvre l'article du Monde"]
     destructive: false
     action: {type: page_link}

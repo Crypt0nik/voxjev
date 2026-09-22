@@ -332,7 +332,7 @@ def plan_action(action: dict, command: Command | None, values: dict[str, str], c
                                                 "timers": "Minuteurs en cours"}[topic])]
 
     if kind == "page_link":
-        return [Step("page_link", (), label="Lien de la page Chrome")]
+        return [Step("page_link", (), label="Lien de la page (navigateur)")]
 
     if kind == "routine":
         steps = []
