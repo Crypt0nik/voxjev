@@ -28,6 +28,13 @@ _HALLUCINATIONS = re.compile(
 )
 
 
+def is_repetition(text: str) -> bool:
+    """Hallucination de Whisper sur du bruit ou de la musique : « oh, oh, oh, oh… »."""
+    words = [w.strip(",.!?…").lower() for w in text.split()]
+    words = [w for w in words if w]
+    return len(words) >= 6 and len(set(words)) <= 2
+
+
 def load_audio_file(path: str) -> np.ndarray:
     """Décode un fichier audio en PCM 16 kHz mono via ffmpeg (argv, sans shell)."""
     import subprocess
@@ -67,6 +74,6 @@ class Transcriber:
             initial_prompt=self.prompt,
         )
         text = " ".join(str(result.get("text", "")).split())
-        if _HALLUCINATIONS.search(text):
+        if _HALLUCINATIONS.search(text) or is_repetition(text):
             text = ""
         return text, (time.perf_counter() - t) * 1000

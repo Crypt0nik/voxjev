@@ -405,3 +405,12 @@ def test_layout_config_validation(tmp_path):
     p.write_text(body.replace("ACTION", "{type: layout, arrangement: explode}"))
     with pytest.raises(ConfigError):
         load_config(p)
+
+
+def test_whisper_repetition_filter():
+    from voxjev.stt import is_repetition
+
+    assert is_repetition("Oh, oh, oh, oh, oh, oh, oh, oh")
+    assert is_repetition("la la la la la la")
+    assert not is_repetition("ouvre Spotify et mets du jazz")
+    assert not is_repetition("oui oui")
