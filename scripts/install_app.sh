@@ -25,7 +25,8 @@ fi
 BUILD="$(mktemp -d)/voxjev.app"
 trap 'rm -rf "$(dirname "$BUILD")"' EXIT
 mkdir -p "$BUILD/Contents/MacOS" "$BUILD/Contents/Resources"
-clang -O2 -Wall -DPROJECT_DIR="\"$PROJECT\"" -o "$BUILD/Contents/MacOS/voxjev" "$PROJECT/scripts/launcher.c"
+clang -O2 -Wall -fobjc-arc -framework Cocoa -DPROJECT_DIR="\"$PROJECT\"" -o "$BUILD/Contents/MacOS/voxjev" \
+  "$PROJECT/scripts/launcher.m"
 cat > "$BUILD/Contents/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">

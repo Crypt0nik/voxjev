@@ -395,12 +395,31 @@ class AppDelegate(NSObject):
         return False
 
 
+class ReopenObserver(NSObject):
+    """voxjev.app rouvert (Spotlight, Finder) : le lanceur prévient le GUI, qui affiche son menu."""
+
+    def initWithApp_(self, app):
+        self = objc.super(ReopenObserver, self).init()
+        if self is None:
+            return None
+        self.app = app
+        return self
+
+    def reopen_(self, note):
+        self.app.popup_menu()
+
+
 class GuiApp:
     def __init__(self, config: Config, client, session: Session, dry_run: bool, sound: bool):
         self.nsapp = NSApplication.sharedApplication()
         self.nsapp.setActivationPolicy_(ACCESSORY_POLICY)
         self.delegate = AppDelegate.alloc().initWithApp_(self)
         self.nsapp.setDelegate_(self.delegate)
+        from Foundation import NSDistributedNotificationCenter
+
+        self.reopen_observer = ReopenObserver.alloc().initWithApp_(self)
+        NSDistributedNotificationCenter.defaultCenter().addObserver_selector_name_object_(
+            self.reopen_observer, "reopen:", "local.voxjev.reopen", None)
         self.hud = HUD(on_confirm=lambda ok: self.engine.answers.put(ok))
         self.engine = Engine(self, config, client, session, dry_run, sound)
         self.history: collections.deque = collections.deque(maxlen=15)

@@ -500,7 +500,7 @@ src/voxjev/
   llm.py        OpenRouter : réponses courtes, brouillons
   desktop.py    agent bureau (arbre d'accessibilité)
   multi.py, spotify.py, webagent.py   demandes composées, Spotify, agent web
-scripts/        install_app.sh (voxjev.app), launcher.c, capslock.sh
+scripts/        install_app.sh (voxjev.app), launcher.m (lanceur : GUI Python en processus enfant), capslock.sh
 tests/          test_core.py, test_multi.py, test_daily.py (103 tests, hors ligne)
 ```
 
