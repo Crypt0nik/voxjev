@@ -234,7 +234,15 @@ class SubprocessExecutor:
             if res.status != "done":
                 raise ActionError(summary)
             return summary
-        if k in ("memory_ask", "file_open"):
+        if k == "navigate":
+            from .chrome import ChromeError, navigate
+
+            try:
+                navigate(step.argv[0])
+            except ChromeError as exc:
+                raise ActionError(str(exc)) from exc
+            return None
+        if k in ("memory_ask", "file_open", "page_link"):
             raise ActionError("étape non résolue (voir Launcher)")
         if k != "run" or not step.argv:
             return None

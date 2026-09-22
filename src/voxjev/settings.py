@@ -619,6 +619,9 @@ class SettingsWindow:
         table.setBackgroundColor_(NSColor.clearColor())
         table.setRowHeight_(26)
         table.setStyle_(4)  # simple
+        table.setHeaderView_(None)  # en-tête remplacé par des libellés posés sur le verre
+        table.setIntercellSpacing_(NSMakeSize(10, 4))
+        table.setGridStyleMask_(0)
         for ident, title, width, check in (("on", "Activée", 60, True), ("safe", "Sans confirm.", 90, True),
                                            ("name", "Commande", 230, False), ("ex", "Exemple", 260, False)):
             col = NSTableColumn.alloc().initWithIdentifier_(ident)
@@ -653,8 +656,18 @@ class SettingsWindow:
         card, content = glass_card()
         content.addSubview_(scroll)
         scroll.setTranslatesAutoresizingMaskIntoConstraints_(False)
-        for a_, b_ in (("topAnchor", 6), ("leadingAnchor", 8)):
-            getattr(scroll, a_)().constraintEqualToAnchor_constant_(getattr(card, a_)(), b_).setActive_(True)
+        header = hstack([], spacing=0)
+        for title, width in (("Activée", 70), ("Sans confirm.", 100), ("Commande", 240), ("Exemple", 200)):
+            lab = text(title.upper(), 10.5, 0.4, NSColor.secondaryLabelColor())
+            lab.setTranslatesAutoresizingMaskIntoConstraints_(False)
+            lab.widthAnchor().constraintEqualToConstant_(width).setActive_(True)
+            header.addArrangedSubview_(lab)
+        content.addSubview_(header)
+        header.setTranslatesAutoresizingMaskIntoConstraints_(False)
+        header.topAnchor().constraintEqualToAnchor_constant_(card.topAnchor(), 14).setActive_(True)
+        header.leadingAnchor().constraintEqualToAnchor_constant_(card.leadingAnchor(), 18).setActive_(True)
+        scroll.topAnchor().constraintEqualToAnchor_constant_(header.bottomAnchor(), 8).setActive_(True)
+        scroll.leadingAnchor().constraintEqualToAnchor_constant_(card.leadingAnchor(), 8).setActive_(True)
         scroll.trailingAnchor().constraintEqualToAnchor_constant_(card.trailingAnchor(), -8).setActive_(True)
         scroll.bottomAnchor().constraintEqualToAnchor_constant_(card.bottomAnchor(), -6).setActive_(True)
         card.heightAnchor().constraintEqualToConstant_(400).setActive_(True)

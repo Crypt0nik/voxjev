@@ -46,6 +46,7 @@ ACTION_TYPES = {
     "mail_triage",    # quels mails non lus demandent une action ?
     "ask",            # question générale -> réponse courte d'un LLM (OpenRouter)
     "desktop_task",   # agent bureau : plusieurs clics dans l'app au premier plan
+    "page_link",      # ouvrir un lien de la page Chrome active (« le 2ᵉ lien », « le meilleur résultat »)
 }
 SPOTIFY_OPS = {"play", "like", "search"}
 ARG_TYPES = {"app", "text", "enum", "mode", "pick", "duration", "when"}

@@ -240,6 +240,19 @@ class Launcher:
                 if p < s.threshold and out.decision.verdict == Verdict.EXECUTE:
                     out.decision = Decision(Verdict.CONFIRM, out.decision.command,
                                             f"fichier incertain (p={p:.2f})", code="medium_p")
+            elif step.kind == "page_link":
+                from .chrome import ChromeError, page_links, pick
+
+                try:
+                    title, url, links = page_links()
+                    link, p, how = pick(self.client, out.transcript, title, url, links, s.pick_min_p)
+                except ChromeError as exc:
+                    raise ActionError(str(exc)) from exc
+                resolved.append(Step("navigate", (link.href,), label=f"Ouvrir « {link.text[:70]} » ({link.domain})"))
+                out.args.display["lien"] = f"{link.text[:60]} — {link.domain}"
+                if how == "jev" and p < s.threshold and out.decision.verdict == Verdict.EXECUTE:
+                    out.decision = Decision(Verdict.CONFIRM, out.decision.command,
+                                            f"lien incertain (p={p:.2f})", code="medium_p")
             elif step.kind in ("memory_ask", "memory_forget"):
                 from .memory import Memory
 

@@ -323,3 +323,25 @@ def test_user_config_overrides_and_validation():
         with pytest.raises(ConfigError):
             load_config(user=bad)
     assert apply_user_config({"settings": {}}, {}) == {"settings": {}, "routines": []}
+
+
+# ------------------------------------------------------------------ liens de la page Chrome
+def test_page_link_ordinal_and_choice(config, monkeypatch):
+    import voxjev.chrome as chrome
+
+    links = [chrome.Link("https://fr.wikipedia.org/wiki/Lisbonne", "Lisbonne — Wikipédia", True),
+             chrome.Link("https://www.visitlisboa.com/", "Visit Lisboa, site officiel", True),
+             chrome.Link("https://accounts.google.com/", "Connexion", False)]
+    assert chrome.ordinal("clique sur le 2ᵉ lien") == 2 and chrome.ordinal("ouvre le dernier résultat") == -1
+    assert chrome.ordinal("ouvre le meilleur résultat") is None
+    assert chrome.pick(FakeJevClient(), "ouvre le deuxième résultat", "t", "u", links)[0].domain == "visitlisboa.com"
+    with pytest.raises(chrome.ChromeError):
+        chrome.pick(FakeJevClient(), "ouvre le 5e résultat", "t", "u", links)
+    monkeypatch.setattr(chrome, "page_links", lambda: ("Lisbonne - Recherche Google",
+                                                       "https://www.google.com/search?q=lisbonne", links))
+    lz = launcher(config, {"clique sur le premier lien": res("page_link")}, executor=Recorder())
+    out = lz.handle("clique sur le premier lien")
+    assert out.status == "executed" and out.steps[0].kind == "navigate"
+    assert out.steps[0].argv == ("https://fr.wikipedia.org/wiki/Lisbonne",)
+    with pytest.raises(chrome.ChromeError):
+        chrome.navigate("javascript:alert(1)")
