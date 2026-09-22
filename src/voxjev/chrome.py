@@ -36,11 +36,14 @@ LINKS_JS = r"""
                       || a.title || '').replace(/\s+/g, ' ').trim();
   const add = (a, result) => {
     const href = a.href || ''; if (!/^https?:/i.test(href) || seen.has(href)) return;
+    if (href.split('#')[0] === location.href.split('#')[0]) return;  // ancre interne (« Skip to content »)
     const text = label(a); if (!text || !visible(a)) return;
     seen.add(href); const r = a.getBoundingClientRect();
     out.push({href, text: text.slice(0, 140), result, y: r.top + scrollY});
   };
-  const results = [...document.querySelectorAll('#search a:has(h3), #rso a:has(h3), main a:has(h2), main a:has(h3), article a:has(h2), article a:has(h3)')];
+  const results = [...document.querySelectorAll(
+    '#search a:has(h3), #rso a:has(h3), main a:has(h2), main a:has(h3), article a:has(h2), article a:has(h3), ' +
+    '[data-testid="results-list"] h3 a, [data-testid="results-list"] > div > div > div > a, .search-title a')];
   results.forEach(a => add(a, true));
   document.querySelectorAll('a[href]').forEach(a => add(a, false));
   out.sort((a, b) => (b.result - a.result) || (a.y - b.y));
@@ -178,19 +181,17 @@ def _session() -> _Session:
 # ------------------------------------------------------------------ navigateurs pilotés par AppleScript
 # Scripts FIGÉS par navigateur (le dictionnaire AppleScript exige le nom de l'app en dur) ;
 # le script JavaScript de lecture et l'adresse passent en argv.
-_CHROMIUM_AS = {
-    "Arc": ('tell application "Arc" to tell front window to tell active tab to execute javascript (item 1 of argv)',
-            'tell application "Arc" to tell front window to set URL of active tab to (item 1 of argv)'),
-    "Brave Browser": ('tell application "Brave Browser" to execute front window\'s active tab javascript (item 1 of argv)',
-                      'tell application "Brave Browser" to set URL of active tab of front window to (item 1 of argv)'),
-    "Microsoft Edge": ('tell application "Microsoft Edge" to execute front window\'s active tab javascript (item 1 of argv)',
-                       'tell application "Microsoft Edge" to set URL of active tab of front window to (item 1 of argv)'),
-    "Vivaldi": ('tell application "Vivaldi" to execute front window\'s active tab javascript (item 1 of argv)',
-                'tell application "Vivaldi" to set URL of active tab of front window to (item 1 of argv)'),
-    "Google Chrome": ('tell application "Google Chrome" to execute front window\'s active tab javascript (item 1 of argv)',
-                      'tell application "Google Chrome" to set URL of active tab of front window to (item 1 of argv)'),
-    "Safari": ('tell application "Safari" to do JavaScript (item 1 of argv) in current tab of front window',
-               'tell application "Safari" to set URL of current tab of front window to (item 1 of argv)'),
+_CHROMIUM_AS = {  # navigateur -> (lecture de la page, changement d'adresse, lecture de l'URL) ; {i} = n° de fenêtre
+    "Arc": ('tell application "Arc" to tell window {i} to tell active tab to execute javascript (item 1 of argv)',
+            'tell application "Arc" to tell window {i} to set URL of active tab to (item 1 of argv)',
+            'tell application "Arc" to get URL of active tab of window {i}'),
+    **{name: (f'tell application "{name}" to execute window {{i}}\'s active tab javascript (item 1 of argv)',
+              f'tell application "{name}" to set URL of active tab of window {{i}} to (item 1 of argv)',
+              f'tell application "{name}" to get URL of active tab of window {{i}}')
+       for name in ("Google Chrome", "Brave Browser", "Microsoft Edge", "Vivaldi")},
+    "Safari": ('tell application "Safari" to do JavaScript (item 1 of argv) in current tab of window {i}',
+               'tell application "Safari" to set URL of current tab of window {i} to (item 1 of argv)',
+               'tell application "Safari" to get URL of current tab of window {i}'),
 }
 BROWSERS = tuple(_CHROMIUM_AS)
 # Ouvrir une adresse dans un NOUVEL ONGLET ACTIF de la fenêtre principale (pas « Little Arc ») :
@@ -209,7 +210,7 @@ _NEW_TAB["Safari"] = ["on run argv", 'tell application "Safari"', "if (count of 
 _NEW_WINDOW = {
     "Arc": ["on run argv", 'tell application "Arc"', "make new window",
             "tell front window to make new tab with properties {URL:(item 1 of argv)}", "activate", "end tell",
-            "end run"],
+            "end run"],  # nouvelle fenêtre : elle a forcément un onglet
     **{name: ["on run argv", f'tell application "{name}"', "make new window",
               "set URL of active tab of front window to (item 1 of argv)", "activate", "end tell", "end run"]
        for name in ("Google Chrome", "Brave Browser", "Microsoft Edge", "Vivaldi")},
@@ -225,6 +226,14 @@ def open_in_browser(url: str, browser: str | None = None, new_window: bool = Fal
         return False
     browser = browser or target_browser()
     lines = (_NEW_WINDOW if new_window else _NEW_TAB).get(browser)
+    if browser == "Arc" and not new_window:  # la fenêtre au premier plan peut n'avoir aucun onglet
+        try:
+            win = usable_window(browser)
+        except ChromeError:
+            win = 1
+        lines = ["on run argv", 'tell application "Arc"',
+                 f"tell window {win} to make new tab with properties {{URL:(item 1 of argv)}}", "activate",
+                 "end tell", "end run"]
     if not lines:
         return False
     try:
@@ -268,7 +277,8 @@ HOW_TO_ALLOW = {
 
 
 def _osascript(line: str, arg: str, timeout: float = 10, browser: str = "") -> str:
-    script = ["on run argv", line, "end run"]
+    """`line` peut contenir plusieurs instructions AppleScript (séparées par des retours à la ligne)."""
+    script = ["on run argv", *line.split("\n"), "end run"]
     try:
         r = subprocess.run(["osascript", *[x for ln in script for x in ("-e", ln)], arg],
                            capture_output=True, text=True, timeout=timeout)
@@ -280,7 +290,10 @@ def _osascript(line: str, arg: str, timeout: float = 10, browser: str = "") -> s
             raise ChromeError("le navigateur refuse la lecture de la page. "
                               + HOW_TO_ALLOW.get(browser, "Autorisez voxjev dans Réglages › Confidentialité › Automatisation"))
         raise ChromeError(f"navigateur : {err[-160:] or 'aucune fenêtre ouverte'}")
-    return r.stdout.strip()
+    out = r.stdout.strip()
+    if out == "missing value":
+        raise ChromeError("aucun onglet lisible dans le navigateur (fenêtre sans onglet ?)")
+    return out
 
 
 def _decode(raw: str) -> dict:
@@ -289,6 +302,17 @@ def _decode(raw: str) -> dict:
     if isinstance(data, str):
         data = json.loads(data or "{}")
     return data if isinstance(data, dict) else {}
+
+
+def usable_window(browser: str, limit: int = 6) -> int:
+    """N° de la première fenêtre dont l'onglet actif est lisible (Arc peut avoir des fenêtres sans onglet)."""
+    for i in range(1, limit + 1):
+        try:
+            if _osascript(_CHROMIUM_AS[browser][2].format(i=i), "", timeout=6, browser=browser).startswith(("http", "chrome", "arc")):
+                return i
+        except ChromeError:
+            continue
+    raise ChromeError("aucun onglet lisible dans le navigateur (ouvrez une page)")
 
 
 def _parse(data: dict) -> tuple[str, str, list[Link]]:
@@ -305,10 +329,12 @@ def page_links(timeout: float = 20) -> tuple[str, str, list[Link]]:
             return _cdp_page_links()
         except ChromeError as cdp_error:
             try:
-                return _parse(_decode(_osascript(_CHROMIUM_AS[browser][0], LINKS_JS, browser=browser)))
+                win = usable_window(browser)
+                return _parse(_decode(_osascript(_CHROMIUM_AS[browser][0].format(i=win), LINKS_JS, browser=browser)))
             except ChromeError:
                 raise cdp_error from None
-    return _parse(_decode(_osascript(_CHROMIUM_AS[browser][0], LINKS_JS, timeout=timeout, browser=browser)))
+    win = usable_window(browser)
+    return _parse(_decode(_osascript(_CHROMIUM_AS[browser][0].format(i=win), LINKS_JS, timeout=timeout, browser=browser)))
 
 
 def _cdp_page_links() -> tuple[str, str, list[Link]]:
@@ -328,13 +354,13 @@ def navigate(url: str) -> None:
         raise ChromeError(f"adresse refusée : {url!r}")
     browser = target_browser()
     if browser != "Google Chrome":
-        _osascript(_CHROMIUM_AS[browser][1], url, browser=browser)
+        _osascript(_CHROMIUM_AS[browser][1].format(i=usable_window(browser)), url, browser=browser)
         subprocess.run(["open", "-a", browser], check=False, timeout=5)
         return
     try:
         _cdp_navigate(url)
     except ChromeError:
-        _osascript(_CHROMIUM_AS[browser][1], url, browser=browser)
+        _osascript(_CHROMIUM_AS[browser][1].format(i=usable_window(browser)), url, browser=browser)
 
 
 def _cdp_navigate(url: str) -> None:

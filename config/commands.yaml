@@ -134,7 +134,7 @@ modes:
   demo:
     description: "Mode démo (vidéo de présentation)"
     aliases: [démo, demo, démonstration, présentation]
-    commands: [demo_stop]
+    commands: [demo_stop, github_search]
   travail:
     description: "Mode travail"
     aliases: [travail, boulot, bureau, taf, work]

@@ -89,6 +89,8 @@ Règles :
   (« cherche Get Lucky puis lance-la » -> « lance Get Lucky ») et garde le contexte d'app
   (« ouvre Spotify et cherche Daft Punk » -> « cherche Daft Punk dans Spotify »).
 - Ne cite JAMAIS une application, un site ou un navigateur qui n'apparaît pas dans la phrase.
+- Réutilise les MOTS de la phrase, surtout les verbes (« cherche » reste « cherche », jamais « ouvre ») ;
+  ne reformule pas, ne résume pas.
 - Si la phrase ne demande qu'une seule action, renvoie une seule étape.
 - Au plus {max_steps} étapes.
 
