@@ -40,8 +40,6 @@ from AppKit import (
     NSSwitch,
     NSTableColumn,
     NSTableView,
-    NSTabViewController,
-    NSTabViewItem,
     NSTextField,
     NSTextView,
     NSView,
@@ -54,7 +52,7 @@ from .config import ConfigError, USER_CONFIG, load_config, read_user_config
 
 PROJECT = Path(__file__).resolve().parents[2]
 ENV_FILE = PROJECT / ".env"
-PAGE_W, PAGE_H = 660.0, 560.0
+PAGE_W, PAGE_H = 670.0, 660.0
 TAB_TOOLBAR = 2  # NSTabViewControllerTabStyleToolbar
 HOTKEYS = [("⌥ Option droite", "alt_r"), ("⌘ Commande droite", "cmd_r"), ("⌃ Contrôle droite", "ctrl_r"),
            ("⇧ Maj droite", "shift_r"), ("Verr. Maj (après remappage F18)", "f18"), ("F13", "f13"), ("F14", "f14"),
@@ -144,13 +142,52 @@ def text(value: str, size: float = 13, weight: float = 0.0, color=None, wrap: bo
     return tf
 
 
-def symbol(name: str, size: float = 15):
-    img = NSImage.imageWithSystemSymbolName_accessibilityDescription_(name, None)
+# Couleurs des tuiles d'icônes (comme les Réglages d'iOS : symbole blanc sur carré arrondi coloré).
+TILE_COLORS = {
+    "keyboard": (142, 142, 147), "square.stack.3d.up": (88, 86, 214), "bolt": (255, 159, 10), "ear": (255, 55, 95),
+    "quote.bubble": (52, 199, 89), "timer": (255, 149, 0), "speaker.wave.2": (255, 45, 85),
+    "text.bubble": (0, 122, 255), "person.wave.2": (175, 82, 222), "power": (52, 199, 89),
+    "checkmark.shield": (52, 199, 89), "eye": (90, 200, 250), "gauge.high": (0, 122, 255),
+    "gauge.low": (142, 142, 147), "exclamationmark.triangle": (255, 59, 48), "brain": (88, 86, 214),
+    "music.note": (255, 45, 85), "globe": (0, 122, 255), "accessibility": (0, 122, 255), "mic": (255, 59, 48),
+    "calendar": (255, 59, 48), "capslock": (142, 142, 147), "doc.text": (0, 122, 255),
+    "person.crop.circle": (142, 142, 147), "list.bullet.rectangle": (255, 149, 0), "arrow.clockwise": (52, 199, 89),
+    "arrow.counterclockwise": (255, 59, 48), "gearshape": (142, 142, 147), "command": (88, 86, 214),
+    "list.bullet.rectangle.portrait": (255, 149, 0), "key": (255, 204, 0), "slider.horizontal.3": (100, 100, 110),
+}
+
+
+def ns_rgb(c, a: float = 1.0):
+    return NSColor.colorWithSRGBRed_green_blue_alpha_(c[0] / 255, c[1] / 255, c[2] / 255, a)
+
+
+def tile(name: str, size: float = 26):
+    """Icône façon Réglages iOS : symbole SF blanc sur carré arrondi coloré, léger dégradé."""
+    import Quartz
     from AppKit import NSImageSymbolConfiguration, NSImageView
 
-    view = NSImageView.imageViewWithImage_(img.imageWithSymbolConfiguration_(
-        NSImageSymbolConfiguration.configurationWithPointSize_weight_(size, 0.2)))
-    view.setContentTintColor_(NSColor.controlAccentColor())
+    color = TILE_COLORS.get(name, (0, 122, 255))
+    view = NSView.alloc().initWithFrame_(NSMakeRect(0, 0, size, size))
+    view.setWantsLayer_(True)
+    grad = Quartz.CAGradientLayer.layer()
+    grad.setFrame_(((0, 0), (size, size)))
+    grad.setCornerRadius_(size * 0.27)
+    top = tuple(min(255, int(c * 1.12 + 18)) for c in color)
+    grad.setColors_([Quartz.CGColorCreateSRGB(*(v / 255 for v in color), 1.0),
+                     Quartz.CGColorCreateSRGB(*(v / 255 for v in top), 1.0)])
+    view.layer().addSublayer_(grad)
+    img = NSImage.imageWithSystemSymbolName_accessibilityDescription_(name, None)
+    if img is not None:
+        img = img.imageWithSymbolConfiguration_(NSImageSymbolConfiguration.configurationWithPointSize_weight_(
+            size * 0.5, 0.3))
+        iv = NSImageView.imageViewWithImage_(img)
+        iv.setContentTintColor_(NSColor.whiteColor())
+        iv.setFrame_(NSMakeRect(0, 0, size, size))
+        iv.setImageScaling_(0)
+        view.addSubview_(iv)
+    view.setTranslatesAutoresizingMaskIntoConstraints_(False)
+    view.widthAnchor().constraintEqualToConstant_(size).setActive_(True)
+    view.heightAnchor().constraintEqualToConstant_(size).setActive_(True)
     return view
 
 
@@ -184,81 +221,119 @@ class Flipped(NSView):
         return True
 
 
+def glass_card(radius: float = 18.0):
+    """Carte en Liquid Glass (macOS 26) ; repli : carte translucide."""
+    try:
+        from AppKit import NSGlassEffectView
+
+        card = NSGlassEffectView.alloc().initWithFrame_(NSMakeRect(0, 0, 100, 40))
+        card.setCornerRadius_(radius)
+        content = Flipped.alloc().initWithFrame_(card.bounds())
+        card.setContentView_(content)
+        return card, content
+    except ImportError:
+        box = NSBox.alloc().initWithFrame_(NSMakeRect(0, 0, 100, 40))
+        box.setBoxType_(4)
+        box.setTitlePosition_(0)
+        box.setBorderWidth_(0)
+        box.setCornerRadius_(radius)
+        box.setFillColor_(NSColor.controlBackgroundColor().colorWithAlphaComponent_(0.6))
+        box.setContentViewMargins_(NSMakeSize(0, 0))
+        return box, box.contentView()
+
+
 class Page:
-    """Une page de réglages : titre, sections groupées (façon Réglages Système), défilement."""
+    """Page façon iOS 26 : grand titre, cartes groupées en Liquid Glass, défilement fluide."""
 
     def __init__(self, title: str, subtitle: str):
         self.view = NSView.alloc().initWithFrame_(NSMakeRect(0, 0, PAGE_W, PAGE_H))
         self.scroll = NSScrollView.alloc().initWithFrame_(self.view.bounds())
         self.scroll.setHasVerticalScroller_(True)
+        self.scroll.setAutohidesScrollers_(True)
         self.scroll.setDrawsBackground_(False)
         self.scroll.setAutoresizingMask_(18)
+        self.scroll.contentView().setDrawsBackground_(False)
         self.doc = Flipped.alloc().initWithFrame_(NSMakeRect(0, 0, PAGE_W, PAGE_H))
         self.scroll.setDocumentView_(self.doc)
         self.view.addSubview_(self.scroll)
         self.stack = vstack([], spacing=10)
         self.doc.addSubview_(self.stack)
-        pin(self.stack, self.doc, top=22, left=28, right=28, bottom=24)
+        pin(self.stack, self.doc, top=54, left=34, right=34, bottom=34)
         self.doc.setTranslatesAutoresizingMaskIntoConstraints_(False)
         clip = self.scroll.contentView()
         self.doc.leadingAnchor().constraintEqualToAnchor_(clip.leadingAnchor()).setActive_(True)
         self.doc.trailingAnchor().constraintEqualToAnchor_(clip.trailingAnchor()).setActive_(True)
         self.doc.topAnchor().constraintEqualToAnchor_(clip.topAnchor()).setActive_(True)
-        self.add(text(title, 22, 0.3))
-        self.add(text(subtitle, 12.5, 0.0, NSColor.secondaryLabelColor(), wrap=True), after=14)
+        big = text(title, 30, 0.56)
+        big.setFont_(_rounded(30, 0.56))
+        self.add(big, after=4)
+        self.add(text(subtitle, 13, 0.0, NSColor.secondaryLabelColor(), wrap=True), after=22)
 
     def add(self, view, after: float = 10):
         self.stack.addArrangedSubview_(view)
         self.stack.setCustomSpacing_afterView_(after, view)
-        if view.isKindOfClass_(NSBox) or view.isKindOfClass_(NSStackView) or view.isKindOfClass_(NSScrollView):
+        if not view.isKindOfClass_(NSTextField) or view.cell().wraps():
             view.widthAnchor().constraintEqualToAnchor_constant_(self.stack.widthAnchor(), 0).setActive_(True)
         return view
 
     def section(self, title: str | None, rows: list, footer: str | None = None):
         if title:
-            self.add(text(title.upper(), 11, 0.3, NSColor.secondaryLabelColor()), after=6)
-        box = NSBox.alloc().initWithFrame_(NSMakeRect(0, 0, 100, 40))
-        box.setBoxType_(4)
-        box.setTitlePosition_(0)
-        box.setBorderWidth_(0)
-        box.setCornerRadius_(12)
-        box.setFillColor_(NSColor.labelColor().colorWithAlphaComponent_(0.045))
-        box.setContentViewMargins_(NSMakeSize(0, 0))
+            head = text(title, 13, 0.4, NSColor.secondaryLabelColor())
+            self.add(head, after=8)
+        card, content = glass_card()
         inner = vstack([], spacing=0, alignment=1)
-        for i, row in enumerate(rows):
+        for i, r in enumerate(rows):
             if i:
-                sep = NSBox.alloc().initWithFrame_(NSMakeRect(0, 0, 10, 1))
-                sep.setBoxType_(2)  # séparateur
+                sep = NSView.alloc().initWithFrame_(NSMakeRect(0, 0, 10, 1))
+                sep.setWantsLayer_(True)
+                sep.layer().setBackgroundColor_(NSColor.labelColor().colorWithAlphaComponent_(0.10).CGColor())
+                sep.setTranslatesAutoresizingMaskIntoConstraints_(False)
+                sep.heightAnchor().constraintEqualToConstant_(1).setActive_(True)
                 inner.addArrangedSubview_(sep)
-                sep.widthAnchor().constraintEqualToAnchor_constant_(inner.widthAnchor(), -24).setActive_(True)
-            inner.addArrangedSubview_(row)
-            row.widthAnchor().constraintEqualToAnchor_(inner.widthAnchor()).setActive_(True)
-        inner.setAlignment_(9)  # centre horizontal (séparateurs centrés)
-        box.contentView().addSubview_(inner)
-        pin(inner, box.contentView(), bottom=0)
-        self.add(box, after=6 if footer else 18)
+                # séparateur aligné sur le texte (après la tuile), comme sur iOS
+                sep.leadingAnchor().constraintEqualToAnchor_constant_(inner.leadingAnchor(), 56).setActive_(True)
+                sep.trailingAnchor().constraintEqualToAnchor_(inner.trailingAnchor()).setActive_(True)
+            inner.addArrangedSubview_(r)
+            r.widthAnchor().constraintEqualToAnchor_(inner.widthAnchor()).setActive_(True)
+        content.addSubview_(inner)
+        inner.setTranslatesAutoresizingMaskIntoConstraints_(False)
+        inner.topAnchor().constraintEqualToAnchor_(card.topAnchor()).setActive_(True)
+        inner.leadingAnchor().constraintEqualToAnchor_(card.leadingAnchor()).setActive_(True)
+        inner.trailingAnchor().constraintEqualToAnchor_(card.trailingAnchor()).setActive_(True)
+        card.bottomAnchor().constraintEqualToAnchor_(inner.bottomAnchor()).setActive_(True)
+        self.add(card, after=8 if footer else 26)
         if footer:
-            self.add(text(footer, 11, 0.0, NSColor.secondaryLabelColor(), wrap=True), after=18)
-        return box
+            self.add(text(footer, 11.5, 0.0, NSColor.secondaryLabelColor(), wrap=True), after=26)
+        return card
+
+
+def _rounded(size: float, weight: float):
+    from AppKit import NSFontDescriptorSystemDesignRounded
+
+    f = NSFont.systemFontOfSize_weight_(size, weight)
+    desc = f.fontDescriptor().fontDescriptorWithDesign_(NSFontDescriptorSystemDesignRounded)
+    return NSFont.fontWithDescriptor_size_(desc, size) if desc is not None else f
 
 
 def row(title: str, subtitle: str | None, control, icon: str | None = None):
-    labels = [text(title, 13, 0.0)]
+    labels = [text(title, 13.5, 0.0)]
     if subtitle:
-        sub = text(subtitle, 11, 0.0, NSColor.secondaryLabelColor(), wrap=True)
-        sub.setPreferredMaxLayoutWidth_(360)
+        sub = text(subtitle, 11.5, 0.0, NSColor.secondaryLabelColor(), wrap=True)
+        sub.setPreferredMaxLayoutWidth_(330)
         labels.append(sub)
     left = vstack(labels, spacing=2)
-    left.setContentHuggingPriority_forOrientation_(1, 0)
-    parts = ([symbol(icon)] if icon else []) + [left]
-    h = hstack(parts, spacing=12)
-    if control is not None:  # contrôle aligné à droite, comme dans Réglages Système
+    left.setHuggingPriority_forOrientation_(1, 0)
+    parts = ([tile(icon)] if icon else []) + [left]
+    h = hstack(parts, spacing=14)
+    if control is not None:  # contrôle aligné à droite
         if control.isKindOfClass_(NSStackView):
             control.setHuggingPriority_forOrientation_(750, 0)
         else:
             control.setContentHuggingPriority_forOrientation_(750, 0)
-        h.addView_inGravity_(control, 3)  # NSStackViewGravityTrailing
-    h.setEdgeInsets_((10, 14, 10, 14))
+        h.addView_inGravity_(control, 3)
+    h.setEdgeInsets_((12, 16, 12, 16))
+    h.setTranslatesAutoresizingMaskIntoConstraints_(False)
+    h.heightAnchor().constraintGreaterThanOrEqualToConstant_(50).setActive_(True)
     return h
 
 
@@ -483,9 +558,10 @@ class SettingsWindow:
         scroll.setHasVerticalScroller_(True)
         scroll.setBorderType_(0)
         table = NSTableView.alloc().initWithFrame_(scroll.bounds())
-        table.setUsesAlternatingRowBackgroundColors_(True)
-        table.setRowHeight_(24)
-        table.setStyle_(1)  # plein
+        table.setUsesAlternatingRowBackgroundColors_(False)
+        table.setBackgroundColor_(NSColor.clearColor())
+        table.setRowHeight_(26)
+        table.setStyle_(4)  # simple
         for ident, title, width, check in (("on", "Activée", 60, True), ("safe", "Sans confirm.", 90, True),
                                            ("name", "Commande", 230, False), ("ex", "Exemple", 260, False)):
             col = NSTableColumn.alloc().initWithIdentifier_(ident)
@@ -513,8 +589,17 @@ class SettingsWindow:
         table.setDataSource_(self.source)
         table.setDelegate_(self.source)
         scroll.setDocumentView_(table)
-        scroll.heightAnchor().constraintEqualToConstant_(380).setActive_(True)
-        page.add(scroll)
+        scroll.setDrawsBackground_(False)
+        scroll.contentView().setDrawsBackground_(False)
+        card, content = glass_card()
+        content.addSubview_(scroll)
+        scroll.setTranslatesAutoresizingMaskIntoConstraints_(False)
+        for a_, b_ in (("topAnchor", 6), ("leadingAnchor", 8)):
+            getattr(scroll, a_)().constraintEqualToAnchor_constant_(getattr(card, a_)(), b_).setActive_(True)
+        scroll.trailingAnchor().constraintEqualToAnchor_constant_(card.trailingAnchor(), -8).setActive_(True)
+        scroll.bottomAnchor().constraintEqualToAnchor_constant_(card.bottomAnchor(), -6).setActive_(True)
+        card.heightAnchor().constraintEqualToConstant_(400).setActive_(True)
+        page.add(card)
         return page
 
     def save_commands(self) -> None:
@@ -545,6 +630,8 @@ class SettingsWindow:
         self.r_steps.setAutomaticQuoteSubstitutionEnabled_(False)
         self.r_steps.setAutomaticDashSubstitutionEnabled_(False)
         self.r_steps.setRichText_(False)
+        self.r_steps.setDrawsBackground_(False)
+        steps_scroll.setDrawsBackground_(False)
         steps_scroll.heightAnchor().constraintEqualToConstant_(150).setActive_(True)
         steps_scroll.widthAnchor().constraintEqualToConstant_(360).setActive_(True)
         cmds = sorted(self.engine.config.commands.values(), key=lambda c: c.id)
@@ -855,41 +942,248 @@ class SettingsWindow:
              ("Commandes", "command", "page_commands"), ("Routines", "list.bullet.rectangle.portrait", "page_routines"),
              ("Connexions", "key", "page_accounts"), ("Avancé", "slider.horizontal.3", "page_advanced"))
 
-    def build(self, select: int = 0):
+    def _page(self, index: int) -> Page:
+        page = self.pages.get(index)
+        if page is None:
+            page = getattr(self, self.PAGES[index][2])()
+            self.pages[index] = page
+        return page
+
+    def select(self, index: int, animated: bool = True) -> None:
+        """Change de page : fondu + léger glissement vers le haut (ressort doux)."""
+        from AppKit import NSAnimationContext
+        import Quartz
+
+        if index < 0 or index >= len(self.PAGES):
+            return
+        new = self._page(index).view
+        old = self.current_view
+        if new is old:
+            return
+        self.current = index
+        self.current_view = new
+        bounds = self.stage.bounds()
+        new.setAutoresizingMask_(18)
+        motion = animated and not _reduce_motion()
+        new.setFrame_(NSMakeRect(0, -14 if motion else 0, bounds.size.width, bounds.size.height))
+        new.setAlphaValue_(0.0 if motion else 1.0)
+        self.stage.addSubview_(new)
+        if self.sidebar_table.selectedRow() != index:
+            self.sidebar_table.selectRowIndexes_byExtendingSelection_(
+                __import__("Foundation").NSIndexSet.indexSetWithIndex_(index), False)
+        if not motion:
+            if old is not None:
+                old.removeFromSuperview()
+            return
+
+        def changes(ctx):
+            ctx.setDuration_(0.34)
+            ctx.setTimingFunction_(Quartz.CAMediaTimingFunction.functionWithControlPoints____(0.2, 0.9, 0.25, 1.0))
+            new.animator().setAlphaValue_(1.0)
+            new.animator().setFrame_(NSMakeRect(0, 0, bounds.size.width, bounds.size.height))
+            if old is not None:
+                old.animator().setAlphaValue_(0.0)
+
+        def done():
+            if old is not None and old is not self.current_view:
+                old.removeFromSuperview()
+                old.setAlphaValue_(1.0)
+
+        NSAnimationContext.runAnimationGroup_completionHandler_(changes, done)
+
+    def rebuild(self, select: int | None = None) -> None:
+        """Reconstruit une page (après une modification qui change son contenu)."""
+        index = self.current if select is None else select
+        old = self.pages.pop(index, None)
+        if old is not None and old.view is self.current_view:
+            self.current_view = None
+            old.view.removeFromSuperview()
+        self.select(index, animated=False)
+
+    def _build_window(self) -> None:
+        from AppKit import (NSSplitViewController, NSSplitViewItem)
+
         self.keep = []
-        tabs = NSTabViewController.alloc().init()
-        tabs.setTabStyle_(TAB_TOOLBAR)
-        self.pages = []
-        for title, icon, method in self.PAGES:
-            page = getattr(self, method)()
-            self.pages.append(page)
-            vc = NSViewController.alloc().init()
-            vc.setView_(page.view)
-            vc.setTitle_(title)
-            vc.setPreferredContentSize_(NSMakeSize(PAGE_W, PAGE_H))
-            item = NSTabViewItem.tabViewItemWithViewController_(vc)
-            item.setLabel_(title)
-            item.setImage_(NSImage.imageWithSystemSymbolName_accessibilityDescription_(icon, title))
-            tabs.addTabViewItem_(item)
-        tabs.setSelectedTabViewItemIndex_(select)
-        return tabs
+        self.pages = {}
+        self.current, self.current_view = 0, None
+        # barre latérale (Liquid Glass natif de macOS 26 via NSSplitViewItem.sidebar)
+        side = NSViewController.alloc().init()
+        side_view = NSView.alloc().initWithFrame_(NSMakeRect(0, 0, 230, 640))
+        side.setView_(side_view)
+        header = self._sidebar_header()
+        side_view.addSubview_(header)
+        pin(header, side_view, top=52, left=18, right=14)
+        table_scroll = NSScrollView.alloc().initWithFrame_(NSMakeRect(0, 0, 230, 400))
+        table_scroll.setDrawsBackground_(False)
+        table_scroll.contentView().setDrawsBackground_(False)
+        table = NSTableView.alloc().initWithFrame_(table_scroll.bounds())
+        table.setStyle_(3)  # source list
+        table.setHeaderView_(None)
+        table.setRowHeight_(34)
+        table.setBackgroundColor_(NSColor.clearColor())
+        table.setIntercellSpacing_(NSMakeSize(0, 2))
+        col = NSTableColumn.alloc().initWithIdentifier_("page")
+        col.setWidth_(200)
+        table.addTableColumn_(col)
+        self.sidebar_source = SidebarSource.alloc().initWithWindow_(self)
+        table.setDataSource_(self.sidebar_source)
+        table.setDelegate_(self.sidebar_source)
+        table_scroll.setDocumentView_(table)
+        side_view.addSubview_(table_scroll)
+        table_scroll.setTranslatesAutoresizingMaskIntoConstraints_(False)
+        table_scroll.topAnchor().constraintEqualToAnchor_constant_(header.bottomAnchor(), 18).setActive_(True)
+        table_scroll.leadingAnchor().constraintEqualToAnchor_(side_view.leadingAnchor()).setActive_(True)
+        table_scroll.trailingAnchor().constraintEqualToAnchor_(side_view.trailingAnchor()).setActive_(True)
+        table_scroll.bottomAnchor().constraintEqualToAnchor_constant_(side_view.bottomAnchor(), -12).setActive_(True)
+        self.sidebar_table = table
+        # contenu : fond « aurore » aux couleurs du logo + page courante
+        content = NSViewController.alloc().init()
+        content_view = NSView.alloc().initWithFrame_(NSMakeRect(0, 0, PAGE_W, PAGE_H))
+        content.setView_(content_view)
+        aurora = Aurora.alloc().initWithFrame_(content_view.bounds())
+        aurora.setAutoresizingMask_(18)
+        content_view.addSubview_(aurora)
+        self.stage = NSView.alloc().initWithFrame_(content_view.bounds())
+        self.stage.setAutoresizingMask_(18)
+        content_view.addSubview_(self.stage)
+        split = NSSplitViewController.alloc().init()
+        sidebar_item = NSSplitViewItem.sidebarWithViewController_(side)
+        sidebar_item.setMinimumThickness_(210)
+        sidebar_item.setMaximumThickness_(260)
+        split.addSplitViewItem_(sidebar_item)
+        split.addSplitViewItem_(NSSplitViewItem.splitViewItemWithViewController_(content))
+        style = 1 | 2 | 4 | 8 | (1 << 15)  # titrée, fermable, réductible, redimensionnable, contenu plein cadre
+        win = NSWindow.alloc().initWithContentRect_styleMask_backing_defer_(
+            NSMakeRect(0, 0, 900, 660), style, 2, False)
+        win.setContentViewController_(split)
+        from AppKit import NSToolbar
 
-    def rebuild(self, select: int = 0) -> None:
-        if self.window is not None:
-            frame = self.window.frame()
-            self.window.setContentViewController_(self.build(select))
-            self.window.setFrame_display_(frame, True)
+        toolbar = NSToolbar.alloc().initWithIdentifier_("voxjev.settings")
+        toolbar.setShowsBaselineSeparator_(False)
+        win.setToolbar_(toolbar)
+        win.setToolbarStyle_(3)  # unifiée : barre latérale flottante en Liquid Glass (macOS 26)
+        win.setTitle_("Réglages de voxjev")
+        win.setTitleVisibility_(1)  # masqué
+        win.setTitlebarAppearsTransparent_(True)
+        win.setMovableByWindowBackground_(True)
+        win.setMinSize_(NSMakeSize(780, 520))
+        win.setReleasedWhenClosed_(False)
+        win.setContentSize_(NSMakeSize(900, 660))
+        win.center()
+        self.window = win
+        table.reloadData()
 
-    def show(self) -> None:
+    def _sidebar_header(self):
+        from AppKit import NSImageView, NSWorkspace
+
+        bundle = str(Path("~/Applications/voxjev.app").expanduser())
+        icon = NSImageView.imageViewWithImage_(NSWorkspace.sharedWorkspace().iconForFile_(bundle))
+        icon.setTranslatesAutoresizingMaskIntoConstraints_(False)
+        icon.widthAnchor().constraintEqualToConstant_(46).setActive_(True)
+        icon.heightAnchor().constraintEqualToConstant_(46).setActive_(True)
+        name = text("voxjev", 17, 0.5)
+        name.setFont_(_rounded(17, 0.5))
+        sub = text("Assistant vocal · Jev", 11.5, 0.0, NSColor.secondaryLabelColor())
+        return hstack([icon, vstack([name, sub], spacing=1)], spacing=10)
+
+    def show(self, page: int = 0) -> None:
         nsapp = NSApplication.sharedApplication()
         if self.window is None:
-            self.window = NSWindow.windowWithContentViewController_(self.build())
-            self.window.setTitle_("Général")
-            self.window.setStyleMask_(self.window.styleMask() & ~(1 << 3))  # pas de redimensionnement
-            self.window.setToolbarStyle_(2)  # préférences
-            self.window.setReleasedWhenClosed_(False)
-            self.window.center()
+            self._build_window()
+            self.select(page, animated=False)
+            self.window.setAlphaValue_(0.0)
+            self.window.makeKeyAndOrderFront_(None)
+            from AppKit import NSAnimationContext
+
+            NSAnimationContext.runAnimationGroup_completionHandler_(
+                lambda ctx: (ctx.setDuration_(0.25), self.window.animator().setAlphaValue_(1.0)), None)
         else:
-            self.rebuild(0)
+            self.pages = {}  # contenu à jour (config rechargée)
+            self.current_view.removeFromSuperview() if self.current_view is not None else None
+            self.current_view = None
+            self.select(self.current, animated=False)
         nsapp.activateIgnoringOtherApps_(True)
         self.window.makeKeyAndOrderFront_(None)
+
+
+def _reduce_motion() -> bool:
+    try:
+        from AppKit import NSWorkspace
+
+        return bool(NSWorkspace.sharedWorkspace().accessibilityDisplayShouldReduceMotion())
+    except Exception:
+        return False
+
+
+class SidebarSource(NSObject):
+    """Barre latérale : tuiles colorées + libellés ; la sélection change de page."""
+
+    def initWithWindow_(self, win):
+        self = objc.super(SidebarSource, self).init()
+        if self is None:
+            return None
+        self.win = win
+        return self
+
+    def numberOfRowsInTableView_(self, table):
+        return len(SettingsWindow.PAGES)
+
+    def tableView_viewForTableColumn_row_(self, table, column, i):
+        title, icon, _ = SettingsWindow.PAGES[i]
+        label = text(title, 13.5, 0.0)
+        cell = hstack([tile(icon, 24), label], spacing=10)
+        cell.setEdgeInsets_((0, 8, 0, 8))
+        return cell
+
+    def tableViewSelectionDidChange_(self, notification):
+        self.win.select(int(notification.object().selectedRow()))
+
+
+class Aurora(NSView):
+    """Fond vivant aux couleurs du logo : grands halos flous qui dérivent lentement, pour que le
+    Liquid Glass des cartes ait quelque chose à réfracter. Suit le thème clair/sombre."""
+
+    BLOBS = (((10, 132, 255), (0.15, 0.85), 0.9), ((90, 200, 250), (0.85, 0.7), 0.7),
+             ((255, 159, 10), (0.25, 0.15), 0.55), ((191, 90, 242), (0.9, 0.2), 0.45))
+
+    def initWithFrame_(self, frame):
+        import Quartz
+
+        self = objc.super(Aurora, self).initWithFrame_(frame)
+        if self is None:
+            return None
+        self.setWantsLayer_(True)
+        self.blobs = []
+        for color, (fx, fy), alpha in self.BLOBS:
+            g = Quartz.CAGradientLayer.layer()
+            g.setType_("radial")
+            g.setStartPoint_((0.5, 0.5))
+            g.setEndPoint_((1.0, 1.0))
+            g.setColors_([Quartz.CGColorCreateSRGB(color[0] / 255, color[1] / 255, color[2] / 255, 0.30 * alpha),
+                          Quartz.CGColorCreateSRGB(color[0] / 255, color[1] / 255, color[2] / 255, 0.0)])
+            self.layer().addSublayer_(g)
+            self.blobs.append((g, fx, fy))
+        self._layout_blobs()
+        if not _reduce_motion():
+            for i, (g, _, _) in enumerate(self.blobs):
+                drift = Quartz.CABasicAnimation.animationWithKeyPath_("transform")
+                drift.setFromValue_(Quartz.NSValue.valueWithCATransform3D_(Quartz.CATransform3DIdentity))
+                t = Quartz.CATransform3DMakeTranslation((-1) ** i * 60, (-1) ** (i // 2) * 40, 0)
+                drift.setToValue_(Quartz.NSValue.valueWithCATransform3D_(Quartz.CATransform3DScale(t, 1.15, 1.15, 1)))
+                drift.setDuration_(11 + 3 * i)
+                drift.setAutoreverses_(True)
+                drift.setRepeatCount_(1e9)
+                drift.setTimingFunction_(Quartz.CAMediaTimingFunction.functionWithName_("easeInEaseOut"))
+                g.addAnimation_forKey_(drift, "drift")
+        return self
+
+    @objc.python_method
+    def _layout_blobs(self) -> None:
+        b = self.bounds()
+        size = max(b.size.width, b.size.height) * 0.95
+        for g, fx, fy in self.blobs:
+            g.setFrame_(((b.size.width * fx - size / 2, b.size.height * fy - size / 2), (size, size)))
+
+    def setFrameSize_(self, size):
+        objc.super(Aurora, self).setFrameSize_(size)
+        self._layout_blobs()
