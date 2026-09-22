@@ -55,7 +55,7 @@ settings:
     - /System/Applications
     - /System/Applications/Utilities
     - ~/Applications
-  exec_allowlist: [pmset, networksetup]
+  exec_allowlist: [pmset, networksetup, demo/launch.sh, demo/stop.sh]
   # Retours : les réponses (agenda, heure, questions…) sont lues à voix haute (say).
   speak_answers: true
   auto_layout: true          # nouvelle page web : nouvelle fenêtre rangée à côté de la fenêtre courante
@@ -131,6 +131,10 @@ modes:
       - {type: open_app, app: Burp Suite Community Edition}
       - {type: open_app, app: Google Chrome, fallbacks: [Safari]}
     commands: [exploitdb_search, cve_search, gtfobins_lookup, open_revshells, open_cyberchef, new_terminal_tab]
+  demo:
+    description: "Mode démo (vidéo de présentation)"
+    aliases: [démo, demo, démonstration, présentation]
+    commands: [demo_stop]
   travail:
     description: "Mode travail"
     aliases: [travail, boulot, bureau, taf, work]
@@ -456,6 +460,21 @@ commands:
       type: sequence
       steps:
         - {type: keystroke, key: "t", modifiers: [command], app: Ghostty, fallbacks: [Terminal]}
+
+  # ---------------------------------------------------------------- mode démo (vidéo de présentation)
+  - id: demo_launch
+    label: "Ouvrir les projets de démo"
+    description: "Ouvrir les fenêtres Ghostty des projets de démonstration"
+    examples: ["ouvre les fenêtres de démo"]
+    destructive: false
+    action: {type: exec, argv: [demo/launch.sh]}
+
+  - id: demo_stop
+    label: "Fermer les projets de démo"
+    description: "Fermer les fenêtres des projets de démonstration"
+    examples: ["ferme les projets", "arrête la démo", "ferme toutes les fenêtres de démo"]
+    destructive: false
+    action: {type: exec, argv: [demo/stop.sh]}
 
   # ---------------------------------------------------------------- mode travail
   - id: new_email
@@ -909,6 +928,16 @@ routines:
       - {run: agenda_read, with: {when: "aujourd'hui"}}
       - {run: open_app, with: {app: Mail}}
       - {run: open_app, with: {app: Calendar}}
+
+  - id: demo_projects
+    mode: demo
+    label: "Lancer mes projets"
+    description: "Lancer tous mes projets de développement dans des terminaux et les ranger à l'écran"
+    examples: ["lance mes projets", "démarre tous mes projets", "ouvre mon environnement de dev"]
+    steps:
+      - {run: demo_launch}
+      - {wait: 2.5}
+      - {run: tile_windows}
 
   - id: routine_concentration
     label: "Routine concentration"

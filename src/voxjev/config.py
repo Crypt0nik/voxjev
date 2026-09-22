@@ -509,8 +509,11 @@ def load_config(path: str | Path | None = None, user: dict | None = None) -> Con
 
     commands: dict[str, Command] = {}
     routines = []
+    routine_modes: dict[str, str] = {}  # routine -> mode (sinon : disponible partout)
     for r in raw.get("routines") or []:  # sucre syntaxique : une routine = une commande de type routine
         r = dict(r)
+        if r.get("mode"):
+            routine_modes[r["id"]] = r.pop("mode")
         r.setdefault("destructive", False)
         r["action"] = {"type": "routine", "steps": r.pop("steps", None)}
         routines.append(r)
@@ -553,11 +556,12 @@ def load_config(path: str | Path | None = None, user: dict | None = None) -> Con
     risky = [c for c in settings.safe_commands if commands[c].destructive or commands[c].always_confirm]
     if risky:
         raise ConfigError(f"settings.safe_commands : {risky} sont destructives ou toujours confirmées")
-    common = tuple(raw.get("common") or []) + tuple(r["id"] for r in routines if r["id"] not in (raw.get("common") or []))
+    common = tuple(raw.get("common") or []) + tuple(
+        r["id"] for r in routines if r["id"] not in (raw.get("common") or []) and r["id"] not in routine_modes)
     modes = {}
     for name, m in raw["modes"].items():
         m = m or {}
-        cmds = tuple(m.get("commands") or [])
+        cmds = tuple(m.get("commands") or []) + tuple(rid for rid, rm in routine_modes.items() if rm == name)
         unknown = (set(cmds) | set(common)) - set(commands)
         if unknown:
             raise ConfigError(f"mode {name}: commandes inconnues {sorted(unknown)}")
