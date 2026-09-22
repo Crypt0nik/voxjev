@@ -41,7 +41,7 @@ int main(void) {
     @autoreleasepool {
         const char *home = getenv("HOME");
         char py[2048], src[2048], cache[2048], logdir[2048], logfile[2048];
-        snprintf(py, sizeof py, "%s/.venv/bin/python", PROJECT_DIR);
+        snprintf(py, sizeof py, "%s/.venv/bin/voxjev", PROJECT_DIR);  // Python embarqué, SDK récent (pymain.c)
         snprintf(src, sizeof src, "%s/src", PROJECT_DIR);
         snprintf(cache, sizeof cache, "%s/Library/Caches/voxjev/pycache", home);
         snprintf(logdir, sizeof logdir, "%s/Library/Logs/voxjev", home);

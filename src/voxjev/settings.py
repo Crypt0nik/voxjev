@@ -216,6 +216,59 @@ def pin(view, parent, top=0.0, left=0.0, right=0.0, bottom=None):
         view.bottomAnchor().constraintEqualToAnchor_constant_(parent.bottomAnchor(), -bottom).setActive_(True)
 
 
+LARGE = 3  # NSControlSizeLarge : contrôles plus grands et plus arrondis (style iOS 26)
+
+
+class CapsuleFieldCell(objc.lookUpClass("NSTextFieldCell")):
+    """Cellule de champ avec marges intérieures (le texte ne touche pas les bords de la capsule)."""
+
+    INSET = 12.0
+
+    @objc.python_method
+    def _inset(self, rect):
+        """Marges horizontales + texte centré verticalement dans la capsule."""
+        line = self.font().ascender() - self.font().descender() + 2 if self.font() else 18
+        y = rect.origin.y + max(0.0, (rect.size.height - line) / 2)
+        return NSMakeRect(rect.origin.x + self.INSET, y, max(0, rect.size.width - 2 * self.INSET), line)
+
+    def drawingRectForBounds_(self, rect):
+        r = objc.super(CapsuleFieldCell, self).drawingRectForBounds_(rect)
+        return self._inset(r)
+
+    def editWithFrame_inView_editor_delegate_event_(self, rect, view, editor, delegate, event):
+        objc.super(CapsuleFieldCell, self).editWithFrame_inView_editor_delegate_event_(
+            self._inset(rect), view, editor, delegate, event)
+
+    def selectWithFrame_inView_editor_delegate_start_length_(self, rect, view, editor, delegate, start, length):
+        objc.super(CapsuleFieldCell, self).selectWithFrame_inView_editor_delegate_start_length_(
+            self._inset(rect), view, editor, delegate, start, length)
+
+
+def rounded_field(value: str = "", placeholder: str = ""):
+    """Champ de saisie en capsule façon iOS 26 : fond translucide, coins entièrement arrondis."""
+    f = NSTextField.alloc().initWithFrame_(NSMakeRect(0, 0, 200, 32))
+    cell = CapsuleFieldCell.alloc().initTextCell_(value)
+    cell.setEditable_(True)
+    cell.setSelectable_(True)
+    cell.setScrollable_(True)
+    cell.setUsesSingleLineMode_(True)
+    f.setCell_(cell)
+    f.setBordered_(False)
+    f.setBezeled_(False)
+    f.setDrawsBackground_(False)
+    f.setFocusRingType_(1)  # pas d'anneau rectangulaire : la capsule change de teinte
+    f.setFont_(NSFont.systemFontOfSize_(13.5))
+    f.setPlaceholderString_(placeholder)
+    f.setWantsLayer_(True)
+    f.layer().setCornerRadius_(16)
+    f.layer().setBackgroundColor_(NSColor.labelColor().colorWithAlphaComponent_(0.07).CGColor())
+    f.layer().setBorderWidth_(0.5)
+    f.layer().setBorderColor_(NSColor.labelColor().colorWithAlphaComponent_(0.10).CGColor())
+    f.setTranslatesAutoresizingMaskIntoConstraints_(False)
+    f.heightAnchor().constraintEqualToConstant_(32).setActive_(True)
+    return f
+
+
 class Flipped(NSView):
     def isFlipped(self):
         return True
@@ -250,6 +303,7 @@ class Page:
         self.scroll = NSScrollView.alloc().initWithFrame_(self.view.bounds())
         self.scroll.setHasVerticalScroller_(True)
         self.scroll.setAutohidesScrollers_(True)
+        self.scroll.setScrollerStyle_(1)  # surimpression : barre fine, visible seulement au défilement
         self.scroll.setDrawsBackground_(False)
         self.scroll.setAutoresizingMask_(18)
         self.scroll.contentView().setDrawsBackground_(False)
@@ -422,6 +476,7 @@ class SettingsWindow:
 
     def switch(self, on: bool, fn):
         sw = NSSwitch.alloc().init()
+        sw.setControlSize_(LARGE)
         sw.setState_(1 if on else 0)
         sw.setTarget_(self.act(lambda s: fn(bool(s.state()))))
         sw.setAction_("fire:")
@@ -429,12 +484,14 @@ class SettingsWindow:
 
     def button(self, title: str, fn, prominent: bool = False):
         b = NSButton.buttonWithTitle_target_action_(title, self.act(lambda s: fn()), "fire:")
+        b.setControlSize_(LARGE)
         if prominent:
             b.setKeyEquivalent_("\r")
         return b
 
     def popup(self, items: list[tuple[str, str]], current: str, fn):
         p = NSPopUpButton.alloc().initWithFrame_pullsDown_(NSMakeRect(0, 0, 220, 26), False)
+        p.setControlSize_(LARGE)
         for title, value in items:
             p.addItemWithTitle_(title)
             p.lastItem().setRepresentedObject_(value)
@@ -464,8 +521,7 @@ class SettingsWindow:
         return hstack([s, label], spacing=8)
 
     def field(self, value: str, fn, width: float = 220, placeholder: str = ""):
-        f = NSTextField.textFieldWithString_(value)
-        f.setPlaceholderString_(placeholder)
+        f = rounded_field(value, placeholder)
         f.widthAnchor().constraintEqualToConstant_(width).setActive_(True)
         f.cell().setSendsActionOnEndEditing_(True)
         f.setTarget_(self.act(lambda s: fn(str(s.stringValue()))))
@@ -552,6 +608,7 @@ class SettingsWindow:
         self.disabled = set(user.get("disabled_commands") or [])
         self.safe = set(self.engine.config.settings.safe_commands)
         search = NSSearchField.alloc().initWithFrame_(NSMakeRect(0, 0, 260, 26))
+        search.setControlSize_(LARGE)
         search.setPlaceholderString_("Rechercher une commande")
         page.add(search, after=10)
         scroll = NSScrollView.alloc().initWithFrame_(NSMakeRect(0, 0, 600, 380))
@@ -589,6 +646,8 @@ class SettingsWindow:
         table.setDataSource_(self.source)
         table.setDelegate_(self.source)
         scroll.setDocumentView_(table)
+        scroll.setScrollerStyle_(1)
+        scroll.setAutohidesScrollers_(True)
         scroll.setDrawsBackground_(False)
         scroll.contentView().setDrawsBackground_(False)
         card, content = glass_card()
@@ -614,14 +673,13 @@ class SettingsWindow:
                                 "valeur ne vient de la voix). Une étape par ligne : « commande argument=valeur », "
                                 "ou « wait 2 » pour une pause.")
         self.routine_list = NSPopUpButton.alloc().initWithFrame_pullsDown_(NSMakeRect(0, 0, 260, 26), False)
+        self.routine_list.setControlSize_(LARGE)
         self.routine_list.setTarget_(self.act(lambda s: self._load_routine()))
         self.routine_list.setAction_("fire:")
         page.add(hstack([self.routine_list, self.button("Nouvelle", self._new_routine),
                          self.button("Supprimer", self._delete_routine)], 8), after=14)
-        self.r_name = NSTextField.textFieldWithString_("")
-        self.r_name.setPlaceholderString_("Nom affiché (ex. Routine du soir)")
-        self.r_phrases = NSTextField.textFieldWithString_("")
-        self.r_phrases.setPlaceholderString_("lance ma routine du soir, mode soirée")
+        self.r_name = rounded_field("", "Nom affiché (ex. Routine du soir)")
+        self.r_phrases = rounded_field("", "lance ma routine du soir, mode soirée")
         for f in (self.r_name, self.r_phrases):
             f.widthAnchor().constraintEqualToConstant_(360).setActive_(True)
         steps_scroll = NSTextView.scrollableTextView()
@@ -631,11 +689,21 @@ class SettingsWindow:
         self.r_steps.setAutomaticDashSubstitutionEnabled_(False)
         self.r_steps.setRichText_(False)
         self.r_steps.setDrawsBackground_(False)
-        steps_scroll.setDrawsBackground_(False)
+        self.r_steps.setTextContainerInset_(NSMakeSize(8, 8))
+        steps_scroll.setDrawsBackground_(True)
+        steps_scroll.setBackgroundColor_(NSColor.labelColor().colorWithAlphaComponent_(0.06))
+        steps_scroll.setScrollerStyle_(1)
+        steps_scroll.setAutohidesScrollers_(True)
+        steps_scroll.setWantsLayer_(True)
+        steps_scroll.layer().setCornerRadius_(14)
+        steps_scroll.layer().setMasksToBounds_(True)
+        steps_scroll.layer().setBorderWidth_(0.5)
+        steps_scroll.layer().setBorderColor_(NSColor.labelColor().colorWithAlphaComponent_(0.10).CGColor())
         steps_scroll.heightAnchor().constraintEqualToConstant_(150).setActive_(True)
         steps_scroll.widthAnchor().constraintEqualToConstant_(360).setActive_(True)
         cmds = sorted(self.engine.config.commands.values(), key=lambda c: c.id)
         adder = NSPopUpButton.alloc().initWithFrame_pullsDown_(NSMakeRect(0, 0, 200, 26), True)
+        adder.setControlSize_(LARGE)
         adder.addItemWithTitle_("Ajouter une étape…")
         adder.addItemWithTitle_("Pause (wait 2)")
         adder.lastItem().setRepresentedObject_("wait 2")

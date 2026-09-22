@@ -19,6 +19,13 @@ if [[ "${1:-}" == "--uninstall" ]]; then
 fi
 
 [[ -x "$PROJECT/.venv/bin/python" ]] || { echo "Lancez d'abord : uv sync"; exit 1; }
+# Python embarqué compilé avec le SDK courant : active le design Liquid Glass de macOS 26
+# (le binaire python3.12 d'uv est lié au SDK 14 et resterait en mode compatibilité).
+PYHOME="$(dirname "$(dirname "$(readlink -f "$PROJECT/.venv/bin/python")")")"
+PYVER="$("$PROJECT/.venv/bin/python" -c 'import sys; print(f"{sys.version_info[0]}.{sys.version_info[1]}")')"
+clang -O2 -Wall -I"$PYHOME/include/python$PYVER" "$PROJECT/scripts/pymain.c" -L"$PYHOME/lib" -lpython"$PYVER" \
+  -Wl,-rpath,"$PYHOME/lib" -o "$PROJECT/.venv/bin/voxjev"
+
 # On construit dans un dossier temporaire et on ne remplace l'app QUE si elle change : une nouvelle
 # signature (ad hoc) fait oublier à macOS les autorisations déjà données (Micro, Accessibilité…).
 # Le code Python n'est pas dans l'app (elle lance le projet) : une mise à jour du code ne la touche pas.
