@@ -12,7 +12,7 @@ et agit dans vos apps : ouvrir, chercher, taper, planifier, cliquer dans un menu
 [![macOS 26](https://img.shields.io/badge/macOS-26%20Tahoe-000000?logo=apple&logoColor=white)](#installation)
 [![Apple Silicon](https://img.shields.io/badge/Apple%20Silicon-M1%E2%80%93M4-555555)](#installation)
 [![Python 3.12](https://img.shields.io/badge/Python-3.12-3776AB?logo=python&logoColor=white)](pyproject.toml)
-[![Tests](https://img.shields.io/badge/tests-106%20passing-2ea44f)](tests)
+[![Tests](https://img.shields.io/badge/tests-115%20passing-2ea44f)](tests)
 [![Licence MIT](https://img.shields.io/badge/licence-MIT-blue)](LICENSE)
 
 <img src="docs/images/hud/1-ecoute.png" width="380" alt="Capsule d'écoute">
@@ -52,7 +52,8 @@ prend le chemin inverse : **le modèle ne fait que choisir, le code exécute.**
 
 **Double-cliquez la touche de parole** pour passer en écoute continue : vous parlez normalement,
 chaque phrase est exécutée dès que vous marquez une pause, sans mot d'éveil ; un nouveau double-clic
-arrête l'écoute (arrêt automatique après 10 minutes de silence).
+arrête l'écoute (arrêt automatique après 10 minutes de silence). Le seuil de voix suit le bruit
+ambiant : un ventilateur ou une musique de fond ne déclenchent rien.
 
 Plus de 55 commandes, 3 modes (défaut, CTF / pentest, travail), et un mode **mains libres** :
 « Jarvis, … », avec détection du mot d'éveil en local.
@@ -144,7 +145,7 @@ liste de vos apps, les intitulés de menus et noms de Raccourcis proposés comme
 souvenirs enregistrés, extraits de mails non lus, liens de la page ouverte.
 
 **Ce qui ne part jamais** : l'audio, l'agenda (lu localement), le contenu des fichiers, les phrases
-sans mot d'éveil en mode mains libres, le journal local, les liens de compte ou contenant un e-mail.
+sans mot d'éveil en mode mains libres (hors écoute continue, activée par vous), le journal local, les liens de compte ou contenant un e-mail.
 
 **Garanties** :
 - aucune chaîne venue du modèle ou de la voix n'est exécutée ;
@@ -158,7 +159,7 @@ Le détail complet est dans le [guide](docs/GUIDE.md#données-envoyées-à-lapi-
 ## Qualité
 
 ```bash
-uv run pytest          # 112 tests, 100 % hors ligne (faux client Jev)
+uv run pytest          # 115 tests, 100 % hors ligne (faux client Jev)
 ./voxjev --eval        # jeu de 175 phrases, dont des phrases proches qui ne doivent PAS déclencher
 ```
 
@@ -189,7 +190,7 @@ src/voxjev/
   when.py               dates et durées en français
   chrome.py · webagent.py · desktop.py   page ouverte, agent web, agent bureau
 scripts/                voxjev.app (lanceur Objective-C, Python embarqué), démo du HUD
-tests/                  106 tests hors ligne
+tests/                  115 tests hors ligne
 ```
 
 ## Feuille de route
