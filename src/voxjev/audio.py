@@ -6,6 +6,7 @@ s'allume que lorsque la touche est maintenue.
 
 from __future__ import annotations
 
+import collections
 import os
 import queue
 import threading
@@ -234,8 +235,13 @@ class HandsFree:
     END_SILENCE_S = 0.75
     MAX_S = 15.0
     MIN_VOICED_S = 0.3  # durée de voix minimale (un clic ou une toux ne suffit pas)
+    HISTORY_S = 3.0  # fenêtre sur laquelle on mesure le bruit de fond
+    NOISE_PERCENTILE = 50  # le fond = le niveau médian des 3 dernières secondes (suit le bruit ambiant)
+    ON_FACTOR, OFF_FACTOR = 2.5, 1.7  # voix = nettement au-dessus du fond ; fin = retour près du fond
+    MIN_ON, MIN_OFF = 0.012, 0.008
 
-    def __init__(self, on_clip, on_level=None, on_speech=None, end_silence_s: float | None = None):
+    def __init__(self, on_clip, on_level=None, on_speech=None, end_silence_s: float | None = None,
+                 max_s: float | None = None):
         import sounddevice as sd
 
         self._sd = sd
@@ -245,6 +251,9 @@ class HandsFree:
         self._stream = None
         self.paused = False
         self.end_silence_s = end_silence_s or self.END_SILENCE_S
+        self.max_s = max_s or self.MAX_S
+        self._history: collections.deque[float] = collections.deque(
+            maxlen=int(self.HISTORY_S * SAMPLE_RATE / self.BLOCK))
         self._floor = 0.004
         self._reset()
 
@@ -278,12 +287,15 @@ class HandsFree:
             self._reset()
             return
         rms = float(np.sqrt(np.mean(chunk**2)))
-        threshold = max(0.012, self._floor * 3.0)
-        loud = rms > threshold
+        # Bruit de fond mesuré en permanence (même pendant une phrase) : avec de la musique ou une
+        # conversation autour, le seuil monte au lieu de tout prendre pour de la voix.
+        self._history.append(rms)
+        if len(self._history) >= 10:
+            self._floor = float(np.percentile(self._history, self.NOISE_PERCENTILE))
+        on = max(self.MIN_ON, self._floor * self.ON_FACTOR)
+        off = max(self.MIN_OFF, self._floor * self.OFF_FACTOR)
+        loud = rms > (off if self._in_speech else on)
         if not self._in_speech:
-            # plancher de bruit : moyenne lente des blocs calmes
-            if not loud:
-                self._floor = 0.98 * self._floor + 0.02 * rms
             self._pre.append(chunk)
             max_pre = int(self.PRE_ROLL_S * SAMPLE_RATE / self.BLOCK)
             self._pre = self._pre[-max_pre:]
@@ -302,7 +314,7 @@ class HandsFree:
         self._silent_blocks = 0 if loud else self._silent_blocks + 1
         self._voiced += 1 if loud else 0
         length = len(self._speech) * self.BLOCK / SAMPLE_RATE
-        if self._silent_blocks * self.BLOCK / SAMPLE_RATE >= self.end_silence_s or length >= self.MAX_S:
+        if self._silent_blocks * self.BLOCK / SAMPLE_RATE >= self.end_silence_s or length >= self.max_s:
             audio = np.concatenate(self._speech)
             voiced = self._voiced * self.BLOCK / SAMPLE_RATE
             self._reset()

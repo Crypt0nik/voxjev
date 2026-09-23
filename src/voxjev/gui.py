@@ -270,6 +270,9 @@ class Engine(threading.Thread):
         if self.transcriber is None:
             return None
         text, stt_ms = self.transcriber.transcribe(audio)
+        if self.continuous:
+            print(f"  (écoute continue : {dur:.1f} s entendues -> « {text} »)" if text
+                  else f"  (écoute continue : {dur:.1f} s, rien de compréhensible)", flush=True)
         if not text:
             return None
         woke, rest = strip_wake_word(text, s.wake_words)
@@ -566,6 +569,7 @@ class GuiApp:
                     on_level=lambda rms: AppHelper.callAfter(self.hud.level_push, rms),
                     on_speech=lambda: AppHelper.callAfter(self._continuous_speech),
                     end_silence_s=s.continuous_end_silence,
+                    max_s=10.0,  # une phrase de commande ne dure jamais 15 s
                 )
                 self.hands_free.start()
             except Exception as exc:
