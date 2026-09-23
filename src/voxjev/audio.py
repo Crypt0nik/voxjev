@@ -76,6 +76,19 @@ def accessibility_trusted() -> bool:
         return True  # impossible de vérifier : on laisse pynput essayer
 
 
+def input_monitoring_granted() -> bool | None:
+    """« Surveillance de l'entrée » accordée ? (nécessaire pour entendre la touche de parole).
+    None si impossible à vérifier."""
+    import ctypes
+
+    try:
+        iokit = ctypes.cdll.LoadLibrary("/System/Library/Frameworks/IOKit.framework/IOKit")
+        iokit.IOHIDCheckAccess.restype = ctypes.c_uint32
+        return iokit.IOHIDCheckAccess(1) == 0  # kIOHIDRequestTypeListenEvent ; 0 = accordé
+    except (OSError, AttributeError):
+        return None
+
+
 def request_permissions() -> None:
     """Déclenche les fenêtres système « Accessibilité » et « Surveillance de l'entrée »
     (utilisé par voxjev.app au premier lancement ; sans effet si déjà accordées)."""
@@ -135,9 +148,15 @@ def parse_hotkey(name: str):
 
 
 class PushToTalk:
-    """Touche maintenue -> enregistrement ; relâchée -> clip audio poussé dans `clips`."""
+    """Touche maintenue -> enregistrement ; relâchée -> clip audio poussé dans `clips`.
 
-    def __init__(self, hotkey: str, on_start=None, on_clip=None, on_level=None):
+    Double-clic (deux appuis brefs rapprochés) -> ``on_double_tap`` (écoute continue).
+    """
+
+    TAP_MAX_S = 0.3  # un appui plus court est un « clic »
+    DOUBLE_TAP_WINDOW_S = 0.4  # délai maximal entre le 1er relâchement et le 2e appui
+
+    def __init__(self, hotkey: str, on_start=None, on_clip=None, on_level=None, on_double_tap=None):
         from pynput import keyboard
 
         self._keyboard = keyboard
@@ -147,6 +166,9 @@ class PushToTalk:
         self.clips: queue.Queue[tuple[np.ndarray, float]] = queue.Queue()
         self._pressed_at: float | None = None
         self._on_start = on_start
+        self._on_double_tap = on_double_tap
+        self._last_tap_release: float | None = None
+        self._swallow_release = False
         self._listener = keyboard.Listener(on_press=self._press, on_release=self._release)
 
     def _matches(self, key) -> bool:
@@ -155,7 +177,14 @@ class PushToTalk:
     def _press(self, key) -> None:
         if not self._matches(key) or self._pressed_at is not None:
             return  # l'auto-répétition du clavier renvoie des press en boucle
-        self._pressed_at = time.perf_counter()
+        now = time.perf_counter()
+        self._pressed_at = now
+        if (self._on_double_tap and self._last_tap_release is not None
+                and now - self._last_tap_release < self.DOUBLE_TAP_WINDOW_S):
+            self._last_tap_release = None
+            self._swallow_release = True  # ce 2e appui ne déclenche pas d'enregistrement
+            self._on_double_tap()
+            return
         try:
             self.recorder.start()
         except Exception as exc:  # micro indisponible / permission refusée
@@ -168,8 +197,13 @@ class PushToTalk:
     def _release(self, key) -> None:
         if not self._matches(key) or self._pressed_at is None:
             return
-        held = time.perf_counter() - self._pressed_at
+        now = time.perf_counter()
+        held = now - self._pressed_at
         self._pressed_at = None
+        if self._swallow_release:
+            self._swallow_release = False
+            return
+        self._last_tap_release = now if held < self.TAP_MAX_S else None
         clip = (self.recorder.stop(), held)
         if self._on_clip:
             self._on_clip(*clip)
@@ -196,12 +230,12 @@ class HandsFree:
     """
 
     BLOCK = 512  # 32 ms à 16 kHz
-    PRE_ROLL_S = 0.35
+    PRE_ROLL_S = 0.5  # garde le début de la phrase (« ouvre… » plutôt que « …vre »)
     END_SILENCE_S = 0.75
     MAX_S = 15.0
     MIN_VOICED_S = 0.3  # durée de voix minimale (un clic ou une toux ne suffit pas)
 
-    def __init__(self, on_clip, on_level=None, on_speech=None):
+    def __init__(self, on_clip, on_level=None, on_speech=None, end_silence_s: float | None = None):
         import sounddevice as sd
 
         self._sd = sd
@@ -210,6 +244,7 @@ class HandsFree:
         self._on_speech = on_speech  # début de phrase détecté (pour l'icône)
         self._stream = None
         self.paused = False
+        self.end_silence_s = end_silence_s or self.END_SILENCE_S
         self._floor = 0.004
         self._reset()
 
@@ -267,7 +302,7 @@ class HandsFree:
         self._silent_blocks = 0 if loud else self._silent_blocks + 1
         self._voiced += 1 if loud else 0
         length = len(self._speech) * self.BLOCK / SAMPLE_RATE
-        if self._silent_blocks * self.BLOCK / SAMPLE_RATE >= self.END_SILENCE_S or length >= self.MAX_S:
+        if self._silent_blocks * self.BLOCK / SAMPLE_RATE >= self.end_silence_s or length >= self.MAX_S:
             audio = np.concatenate(self._speech)
             voiced = self._voiced * self.BLOCK / SAMPLE_RATE
             self._reset()

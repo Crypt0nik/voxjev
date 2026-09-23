@@ -280,7 +280,7 @@ def test_hands_free_vad_cuts_one_utterance(monkeypatch):
     feed(0.002, 1.0)   # silence -> fin de phrase
     feed(0.2, 0.1)     # clic isolé : trop court
     feed(0.002, 1.0)
-    assert len(clips) == 1 and 1.2 <= clips[0] <= 2.2
+    assert len(clips) == 1 and 1.2 <= clips[0] <= 2.5  # voix + tampon d'avant-phrase + fin de phrase
 
 
 def test_wake_word():
@@ -414,3 +414,50 @@ def test_whisper_repetition_filter():
     assert is_repetition("la la la la la la")
     assert not is_repetition("ouvre Spotify et mets du jazz")
     assert not is_repetition("oui oui")
+
+
+# ------------------------------------------------------------------ écoute continue (double-clic)
+def test_double_tap_toggles_without_recording(monkeypatch):
+    import voxjev.audio as audio
+
+    clock = [100.0]
+    monkeypatch.setattr(audio.time, "perf_counter", lambda: clock[0])
+
+    class FakeRecorder:
+        starts = 0
+
+        def start(self):
+            FakeRecorder.starts += 1
+
+        def stop(self):
+            import numpy as np
+
+            return np.zeros(10, dtype="float32")
+
+    taps, clips = [], []
+    ptt = audio.PushToTalk("alt_r", on_clip=lambda a, held: clips.append(held), on_double_tap=lambda: taps.append(1))
+    ptt.recorder = FakeRecorder()
+    key = ptt.hotkey
+    ptt._press(key); clock[0] += 0.1; ptt._release(key)      # 1er clic bref
+    clock[0] += 0.2; ptt._press(key); clock[0] += 0.1; ptt._release(key)  # 2e clic : double-clic
+    assert taps == [1] and FakeRecorder.starts == 1 and len(clips) == 1  # le 2e appui n'enregistre rien
+    clock[0] += 2.0; ptt._press(key); clock[0] += 1.5; ptt._release(key)  # appui long normal ensuite
+    assert taps == [1] and FakeRecorder.starts == 2 and clips[-1] == pytest.approx(1.5)
+    clock[0] += 0.1; ptt._press(key); clock[0] += 0.1; ptt._release(key)  # un appui long ne compte pas comme clic
+    assert taps == [1]
+
+
+def test_continuous_listening_ignores_doubtful_addressing(config):
+    lz = launcher(config, {"ouvre Safari": res("open_app", p=0.95, addressed=0.5)}, executor=Recorder())
+    assert lz.plan("ouvre Safari").decision.verdict == Verdict.CONFIRM  # normal : on demande
+    lz.strict_addressed = True  # écoute continue : une conversation ne fait pas surgir de question
+    assert lz.plan("ouvre Safari").decision.verdict == Verdict.IGNORE
+
+
+def test_whisper_hallucinations_on_noise_are_dropped():
+    from voxjev.stt import _HALLUCINATIONS
+
+    for noise in ("Closed Captioning by", "Sous-titres réalisés par la communauté d'Amara.org", "Thanks for watching!"):
+        assert _HALLUCINATIONS.search(noise)
+    for real in ("ok", "oui", "ouvre Google", "arrange les fenêtres"):
+        assert not _HALLUCINATIONS.search(real)

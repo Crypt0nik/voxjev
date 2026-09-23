@@ -23,7 +23,9 @@ MIN_RMS = 0.004  # en dessous : silence, on ne transcrit pas
 
 # Hallucinations classiques de Whisper sur du silence / bruit en français.
 _HALLUCINATIONS = re.compile(
-    r"sous-titr|amara\.org|merci d'avoir regardé|abonnez-vous|^\W*merci\W*$|^\W*$",
+    r"sous-titr|amara\.org|merci d'avoir regardé|abonnez-vous|^\W*merci\W*$|^\W*$|"
+    r"closed caption|captioning by|subtitles by|thanks for watching|thank you for watching|"
+    r"^\W*(?:you|bye)\W*$",
     re.IGNORECASE,
 )
 

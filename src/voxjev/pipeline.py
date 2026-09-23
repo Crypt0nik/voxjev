@@ -62,7 +62,8 @@ class Launcher:
         self.current: Outcome | None = None  # énoncé en cours (lu par les confirmateurs graphiques)
         self.provider = provider or Provider()
         self._warm_at = 0.0
-        self.defer_page_links = False  # demandes composées : lien choisi à l'exécution
+        self.defer_page_links = False
+        self.strict_addressed = False  # écoute continue  # demandes composées : lien choisi à l'exécution
         self._spec: dict = {}  # clé de requête -> (instant, future) : réponses anticipées
         self._pool = None
         if executor is not None:
@@ -77,7 +78,11 @@ class Launcher:
         from dataclasses import replace
 
         s = self.config.settings
-        return s if self.session.quiet is None else replace(s, quiet_mode=self.session.quiet)
+        if self.session.quiet is not None:
+            s = replace(s, quiet_mode=self.session.quiet)
+        if self.strict_addressed:  # écoute continue : une conversation ne doit pas faire surgir de questions
+            s = replace(s, addressed_floor=s.addressed_threshold)
+        return s
 
     def _request(self, transcript: str, mode: str):
         commands = self.config.commands_for_mode(mode)

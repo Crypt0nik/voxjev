@@ -89,6 +89,7 @@ PHASES = {  # phase -> (couleur, symbole SF de la barre des menus)
     "loading": (GRAY, "hourglass"),
     "idle": (GRAY, "waveform"),
     "listening": (RED, "mic.fill"),
+    "continuous": (BLUE, "waveform.circle.fill"),
     "transcribing": (BLUE, "text.bubble"),
     "thinking": (PURPLE, "sparkles"),
     "confirm": (ORANGE, "questionmark.circle"),

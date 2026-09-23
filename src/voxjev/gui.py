@@ -77,6 +77,8 @@ class Engine(threading.Thread):
         self.speak = config.settings.speak_answers
         self.partial = ("", 0)  # (texte, nb d'échantillons couverts) : transcription anticipée
         self.followup_until = 0.0  # fenêtre de suite du mode mains libres
+        self.continuous = False  # écoute continue (double-clic) : pas de mot d'éveil
+        self.last_activity = 0.0
 
     def ui(self, fn, *args) -> None:
         AppHelper.callAfter(fn, *args)
@@ -234,12 +236,20 @@ class Engine(threading.Thread):
         else:
             text = job[1]
             timings = dict(job[2]) if len(job) > 2 else {}
-        self.ui(hud.show_transcript, text)
-        self.ui(hud.phase, "thinking", "Jev réfléchit…", 0, True)
+        # Écoute continue : rien ne s'affiche tant qu'on ne sait pas si c'est une vraie demande
+        # (sinon chaque bruit ou bout de conversation ferait clignoter le HUD).
+        discreet = self.continuous
+        if not discreet:
+            self.ui(hud.show_transcript, text)
+            self.ui(hud.phase, "thinking", "Jev réfléchit…", 0, True)
         self.ui(self.app.set_icon, "thinking")
         out = self.runner.handle(text)
         out.timings = {**timings, **out.timings, "total_ms": (time.perf_counter() - started) * 1000}
         print(format_any(out, self.session.mode), flush=True)
+        if discreet and out.status == "ignored":
+            self.ui(hud.hide)
+            self.ui(self.app.set_icon, "idle")
+            return
         if out.status != "dry_run":
             self.sounds.for_status(out.status)
         if isinstance(out, PlanOutcome):
@@ -263,6 +273,10 @@ class Engine(threading.Thread):
         if not text:
             return None
         woke, rest = strip_wake_word(text, s.wake_words)
+        if self.continuous:  # écoute continue : chaque phrase est une demande (Jev filtre le reste)
+            self.last_activity = time.monotonic()
+            phrase = rest if woke and rest else text
+            return ("text", phrase, {"audio_s": dur, "stt_ms": stt_ms})
         in_followup = time.monotonic() < self.followup_until
         if not woke and not in_followup:
             print(f"  (mains libres, ignoré localement : « {text} »)", flush=True)
@@ -359,6 +373,9 @@ class MenuTarget(NSObject):
     def reloadConfig_(self, sender):
         self.app.engine.jobs.put(("reload",))
 
+    def toggleContinuous_(self, sender):
+        self.app.set_continuous(not self.app.continuous_on)
+
     def toggleHandsFree_(self, sender):
         self.app.set_hands_free(not self.app.hands_free_on)
 
@@ -452,6 +469,8 @@ class GuiApp:
 
     # ---------------------------------------------------------------- barre des menus
     def set_icon(self, phase: str) -> None:
+        if phase == "idle" and getattr(self.engine, "continuous", False):
+            phase = "continuous"  # entre deux commandes, l'icône rappelle que le micro est ouvert
         image = NSImage.imageWithSystemSymbolName_accessibilityDescription_(PHASES[phase][1], "voxjev")
         if image is not None:
             image.setTemplate_(True)
@@ -502,7 +521,10 @@ class GuiApp:
         menu.addItem_(sub)
         menu.addItem_(NSMenuItem.separatorItem())
         wake = ", ".join(w.capitalize() for w in s.wake_words)
-        self._add(menu, f"Mains libres (dire « {wake}, … »)", "toggleHandsFree:", state=self.hands_free_on)
+        self._add(menu, f"Écoute continue (double-clic sur {hotkey_label(s.hotkey)})", "toggleContinuous:",
+                  state=self.continuous_on)
+        self._add(menu, f"Mains libres (dire « {wake}, … »)", "toggleHandsFree:",
+                  state=self.hands_free_on and not self.continuous_on)
         quiet = e.launcher.settings.quiet_mode if e.launcher else s.quiet_mode
         self._add(menu, "Sans confirmation pour les actions sans risque", "toggleQuiet:", state=quiet)
         self._add(menu, "Dry-run (ne rien exécuter)", "toggleDryRun:", state=e.dry_run)
@@ -519,6 +541,74 @@ class GuiApp:
     @property
     def hands_free_on(self) -> bool:
         return bool(self.hands_free and self.hands_free.running)
+
+    # ------------------------------------------------------------ écoute continue
+    @property
+    def continuous_on(self) -> bool:
+        return self.engine.continuous
+
+    def _on_double_tap(self) -> None:
+        """Thread clavier : double-clic sur la touche de parole."""
+        if self.engine.config.settings.double_tap_continuous:
+            AppHelper.callAfter(self.set_continuous, not self.engine.continuous)
+
+    def set_continuous(self, on: bool) -> None:
+        """Écoute continue : micro ouvert, chaque phrase exécutée sans mot d'éveil."""
+        s = self.engine.config.settings
+        if on == self.engine.continuous:
+            return
+        if on:
+            if self.hands_free_on:
+                self.hands_free.stop()  # redémarré avec un découpage plus réactif
+            try:
+                self.hands_free = HandsFree(
+                    on_clip=lambda audio, dur: self.engine.jobs.put(("hands_free", audio, dur)),
+                    on_level=lambda rms: AppHelper.callAfter(self.hud.level_push, rms),
+                    on_speech=lambda: AppHelper.callAfter(self._continuous_speech),
+                    end_silence_s=s.continuous_end_silence,
+                )
+                self.hands_free.start()
+            except Exception as exc:
+                self.hud.show_message("Écoute continue indisponible", str(exc), "error", 6.0)
+                return
+            self.engine.continuous = True
+            self.engine.last_activity = time.monotonic()
+            if self.engine.launcher:
+                self.engine.launcher.strict_addressed = True
+            print("🎙 écoute continue activée", flush=True)
+            self.engine.sounds.play("continuous_on")
+            self.set_icon("continuous")
+            self.hud.show_message("Écoute continue", f"Parlez normalement, j'exécute au fil de l'eau. "
+                                  f"Double-clic sur {hotkey_label(s.hotkey)} pour arrêter.", "listening", 3.5)
+            AppHelper.callLater(30.0, self._continuous_watchdog)
+        else:
+            self.engine.continuous = False
+            if self.engine.launcher:
+                self.engine.launcher.strict_addressed = False
+            if self.hands_free_on:
+                self.hands_free.stop()
+            if s.hands_free:  # le mode « mot d'éveil » reprend s'il était demandé
+                self.set_hands_free(True)
+            print("🎙 écoute continue arrêtée", flush=True)
+            self.engine.sounds.play("continuous_off")
+            self.set_icon("idle")
+            self.hud.phase("idle", "Écoute continue arrêtée", 1.6)
+        self.rebuild_menu()
+
+    def _continuous_speech(self) -> None:
+        if self.engine.continuous and self.hud.hint.isHidden():
+            self.hud.phase("listening", "J'écoute…")
+
+    def _continuous_watchdog(self) -> None:
+        """Arrêt automatique après un long silence (micro jamais ouvert pour rien)."""
+        if not self.engine.continuous:
+            return
+        idle = time.monotonic() - self.engine.last_activity
+        if idle > self.engine.config.settings.continuous_idle_minutes * 60:
+            self.set_continuous(False)
+            self.hud.show_message("Écoute continue arrêtée", "Aucune demande depuis un moment.", "idle", 3.0)
+            return
+        AppHelper.callLater(30.0, self._continuous_watchdog)
 
     def set_hands_free(self, on: bool) -> None:
         if on and not self.hands_free_on:
@@ -553,7 +643,8 @@ class GuiApp:
         self.ptt.stop()
         try:
             self.ptt = PushToTalk(hotkey, on_start=self._on_press, on_clip=self._on_clip,
-                                  on_level=lambda rms: AppHelper.callAfter(self.hud.level_push, rms))
+                                  on_level=lambda rms: AppHelper.callAfter(self.hud.level_push, rms),
+                                  on_double_tap=self._on_double_tap)
             self.ptt.start()
             self.hud.phase("idle", f"Touche de parole : {hotkey_label(hotkey)}", 2.0)
         except ValueError as exc:
@@ -607,12 +698,20 @@ class GuiApp:
     def start(self, initial_text: str | None = None) -> None:
         s = self.engine.config.settings
         self.engine.start()
+        from .audio import input_monitoring_granted
+
+        listen = input_monitoring_granted()
+        print(f"Autorisations : Accessibilité={'oui' if self.trusted else 'NON'}, "
+              f"Surveillance de l'entrée={'oui' if listen else ('NON' if listen is False else '?')}", flush=True)
+        if listen is False:
+            self.trusted = False  # sans elle, la touche de parole n'est jamais entendue
         if self.trusted:
             self.ptt = PushToTalk(
                 s.hotkey,
                 on_start=self._on_press,
                 on_clip=self._on_clip,
                 on_level=lambda rms: AppHelper.callAfter(self.hud.level_push, rms),
+                on_double_tap=self._on_double_tap,
             )
             self.ptt.start()
         else:

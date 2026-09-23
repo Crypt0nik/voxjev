@@ -153,7 +153,7 @@ TILE_COLORS = {
     "calendar": (255, 59, 48), "capslock": (142, 142, 147), "doc.text": (0, 122, 255),
     "person.crop.circle": (142, 142, 147), "list.bullet.rectangle": (255, 149, 0), "arrow.clockwise": (52, 199, 89),
     "arrow.counterclockwise": (255, 59, 48), "gearshape": (142, 142, 147), "command": (88, 86, 214),
-    "list.bullet.rectangle.portrait": (255, 149, 0), "rectangle.split.2x1": (0, 122, 255),
+    "list.bullet.rectangle.portrait": (255, 149, 0), "waveform.circle": (0, 122, 255), "rectangle.split.2x1": (0, 122, 255),
     "rectangle.grid.2x2": (88, 86, 214), "key": (255, 204, 0), "slider.horizontal.3": (100, 100, 110),
 }
 
@@ -555,6 +555,16 @@ class SettingsWindow:
 
         stepper.setTarget_(self.act(step))
         stepper.setAction_("fire:")
+        page.section("Écoute continue", [
+            row("Double-clic pour écouter en continu", "Double-cliquez la touche de parole : chaque phrase est "
+                "exécutée dès que vous marquez une pause, sans mot d'éveil. Nouveau double-clic pour arrêter.",
+                self.switch(s.double_tap_continuous, lambda on: self.set_setting("double_tap_continuous", on)),
+                "waveform.circle"),
+            row("Arrêt automatique après", "Minutes sans aucune demande.",
+                self.slider(s.continuous_idle_minutes, 2, 30, lambda v: self.set_setting("continuous_idle_minutes",
+                                                                                         round(v)),
+                            fmt=lambda v: f"{v:.0f} min"), "timer"),
+        ])
         page.section("Mains libres", [
             row("Mains libres au démarrage", "Micro ouvert en continu ; seules les phrases qui commencent par le mot "
                 "d'éveil partent vers Jev.", self.switch(s.hands_free, self._hands_free), "ear"),

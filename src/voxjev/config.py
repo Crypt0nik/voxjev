@@ -114,6 +114,7 @@ USER_SETTING_KEYS = {  # réglages modifiables depuis la fenêtre
     "hotkey", "threshold", "confirm_floor", "addressed_threshold", "addressed_floor", "destructive_threshold",
     "speak_answers", "voice", "quiet_mode", "safe_commands", "speculate", "hands_free", "wake_words",
     "followup_seconds", "sounds_enabled", "app_aliases", "split_model", "auto_layout",
+    "double_tap_continuous", "continuous_idle_minutes",
 }
 
 
@@ -197,7 +198,11 @@ class Settings:
     none_option: dict = field(default_factory=dict)
     speak_answers: bool = True
     sounds_enabled: bool = True
-    auto_layout: bool = True  # nouvelles pages web : nouvelle fenêtre rangée à côté de la fenêtre courante
+    auto_layout: bool = True
+    # Écoute continue : double-clic sur la touche de parole ; chaque phrase est exécutée sans mot d'éveil.
+    double_tap_continuous: bool = True
+    continuous_idle_minutes: float = 10.0  # arrêt automatique après ce silence
+    continuous_end_silence: float = 0.7  # pause qui termine une phrase (s)  # nouvelles pages web : nouvelle fenêtre rangée à côté de la fenêtre courante
     # Mode sans confirmation : les commandes sans risque s'exécutent directement, même si Jev
     # hésite un peu (au-dessus des planchers). Les actions destructives restent toujours confirmées.
     quiet_mode: bool = True

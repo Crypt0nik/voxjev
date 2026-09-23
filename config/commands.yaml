@@ -49,6 +49,8 @@ settings:
     failure: /System/Library/Sounds/Basso.aiff
     listening: /System/Library/Sounds/Tink.aiff
     ignored: /System/Library/Sounds/Pop.aiff
+    continuous_on: /System/Library/Sounds/Hero.aiff
+    continuous_off: /System/Library/Sounds/Bottle.aiff
   app_dirs:
     - /Applications
     - /Applications/Utilities

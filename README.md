@@ -50,6 +50,10 @@ prend le chemin inverse : **le modèle ne fait que choisir, le code exécute.**
 | **Tâches web et bureau** | « trouve-moi un vol Paris Lisbonne le 12 octobre » (agent qui s'arrête avant tout achat) |
 | **Routines** | « lance ma routine du matin » : vos enchaînements, définis dans les Réglages |
 
+**Double-cliquez la touche de parole** pour passer en écoute continue : vous parlez normalement,
+chaque phrase est exécutée dès que vous marquez une pause, sans mot d'éveil ; un nouveau double-clic
+arrête l'écoute (arrêt automatique après 10 minutes de silence).
+
 Plus de 55 commandes, 3 modes (défaut, CTF / pentest, travail), et un mode **mains libres** :
 « Jarvis, … », avec détection du mot d'éveil en local.
 
